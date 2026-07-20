@@ -1,35 +1,9 @@
 // src/app/page.tsx
 import Link from "next/link";
-
-interface Video {
-  id: string;
-  title: string;
-  authors: string[];
-  tags: string[];
-  azure_stream_url: string;
-  is_deleted: boolean;
-}
-
-async function getVideos(): Promise<Video[]> {
-  try {
-    const res = await fetch('http://127.0.0.1:8000/api/v1/videos/?include_deleted=true', { 
-      cache: 'no-store' 
-    });
-    
-    if (!res.ok) {
-      throw new Error('Failed to fetch videos');
-    }
-    
-    return res.json();
-  } catch (error) {
-    console.error("Error fetching videos:", error);
-    return [];
-  }
-}
+import { getVideos } from "@/lib/api"; 
 
 export default async function Home() {
-  const videos = await getVideos();
-
+  const videos = await getVideos(true); 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
       
@@ -81,9 +55,9 @@ export default async function Home() {
           
           /* VIDEO LIST STATE (Grid) */
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {videos.map((video) => (
+            {videos.map((video, index) => (
               <div 
-                key={video.id} 
+                key={video.id || (video as any)._id || index} 
                 className={`bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col ${video.is_deleted ? 'opacity-60 grayscale' : ''}`}
               >
                 <h2 className="text-lg font-semibold text-slate-900 mb-3 line-clamp-2" title={video.title}>

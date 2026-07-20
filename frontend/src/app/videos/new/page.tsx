@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createVideo } from "@/lib/api";
 
 export default function NewVideoPage() {
   const router = useRouter();
@@ -24,22 +25,12 @@ export default function NewVideoPage() {
     const tagsArray = tags.split(",").map((t) => t.trim()).filter(Boolean);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/v1/videos/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title,
-          authors: authorsArray,
-          tags: tagsArray,
-          azure_stream_url: streamUrl,
-        }),
+      await createVideo({
+        title,
+        authors: authorsArray,
+        tags: tagsArray,
+        azure_stream_url: streamUrl,
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to create video record");
-      }
 
       router.push("/");
       router.refresh(); 
