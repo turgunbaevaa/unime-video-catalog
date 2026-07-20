@@ -32,9 +32,36 @@ async def create_video(video: VideoCreate):
 
 
 @router.get("/", response_model=List[VideoResponse])
-async def get_all_videos():
-    videos = await videos_collection.find().to_list(100)
+async def get_all_videos(include_deleted: bool = False):
+    # If `include_deleted=False`, we only search for videos that do not have the `is_deleted: True` flag set
+    query = {} if include_deleted else {"is_deleted": {"$ne": True}}
+
+    videos = await videos_collection.find(query).to_list(100)
     for video in videos:
         video["_id"] = str(video["_id"])
 
     return videos
+
+
+@router.delete("/{video_id}")
+async def delete_video(video_id: str, permanent: bool = False):
+    # 1. We check that the ID provided is in the correct MongoDB format
+    if not ObjectId.is_valid(video_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid video ID format")
+
+    # 2. The logic behind PERMANENT deletion
+    if permanent:
+        result = await videos_collection.delete_one({"_id": ObjectId(video_id)})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
+        return {"message": "Video permanently deleted"}
+
+    # 3. The logic behind SOFT deletion
+    else:
+        result = await videos_collection.update_one(
+            {"_id": ObjectId(video_id)},
+            {"$set": {"is_deleted": True}}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
+        return {"message": "Video softly deleted"}

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createVideo } from "@/lib/api";
+import { createVideo } from "@/src/lib/api";
 
 export default function NewVideoPage() {
   const router = useRouter();
