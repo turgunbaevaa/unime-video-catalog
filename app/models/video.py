@@ -39,3 +39,10 @@ class VideoResponse(VideoCreate):
 
     class Config:
         populate_by_name = True # Allows FastAPI to correctly read the _id from MongoDB
+
+class VideoUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=3, max_length=200)
+    authors: Optional[List[str]] = Field(None)
+    date_recorded: Optional[datetime] = Field(None)
+    tags: Optional[List[str]] = Field(None)
+    azure_stream_url: Optional[HttpUrl] = Field(None)

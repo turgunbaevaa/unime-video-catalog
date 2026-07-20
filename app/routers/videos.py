@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 from typing import List
-from app.models.video import VideoCreate, VideoResponse
+from app.models.video import VideoCreate, VideoResponse, VideoUpdate
 from app.database import videos_collection
 from bson import ObjectId
 from datetime import datetime
@@ -65,3 +65,30 @@ async def delete_video(video_id: str, permanent: bool = False):
         if result.matched_count == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
         return {"message": "Video softly deleted"}
+
+
+@router.patch("/{video_id}", response_model=VideoResponse)
+async def update_video(video_id: str, video_update: VideoUpdate):
+    if not ObjectId.is_valid(video_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid video ID format")
+
+    update_data = video_update.model_dump(exclude_unset=True)
+
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided for update")
+
+    if "azure_stream_url" in update_data and update_data["azure_stream_url"] is not None:
+        update_data["azure_stream_url"] = str(update_data["azure_stream_url"])
+
+    result = await videos_collection.update_one(
+        {"_id": ObjectId(video_id)},
+        {"$set": update_data}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
+
+    updated_video = await videos_collection.find_one({"_id": ObjectId(video_id)})
+    updated_video["_id"] = str(updated_video["_id"])
+
+    return updated_video
