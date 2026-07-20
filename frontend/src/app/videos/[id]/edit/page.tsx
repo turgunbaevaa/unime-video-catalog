@@ -28,7 +28,7 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
       try {
         // Получаем все видео (или можно использовать отдельный get-запрос, если он есть)
         const videos = await getVideos(true);
-        const video = videos.find((v: Video) => (v.id || (v as any)._id) === videoId);
+        const video = videos.find((v: Video) => (v._id === videoId));
 
         if (video) {
           setInitialData(video);
@@ -83,6 +83,9 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
         router.push("/");
         return;
       }
+
+      console.log("videoId:", videoId);
+      console.log("updatedFields:", updatedFields);
 
       await updateVideo(videoId, updatedFields);
       router.push("/");

@@ -18,6 +18,7 @@ async def create_video(video: VideoCreate):
     video_dict["azure_stream_url"] = str(video_dict["azure_stream_url"])
 
     video_dict["created_at"] = datetime.utcnow()
+    video_dict["is_deleted"] = False
     video_dict["ai_processing"] = {"status": "pending", "transcript_segments": []}
     video_dict["opac_export"] = {"is_exported": False}
 
@@ -35,7 +36,6 @@ async def create_video(video: VideoCreate):
 async def get_all_videos(include_deleted: bool = False):
     # If `include_deleted=False`, we only search for videos that do not have the `is_deleted: True` flag set
     query = {} if include_deleted else {"is_deleted": {"$ne": True}}
-
     videos = await videos_collection.find(query).to_list(100)
     for video in videos:
         video["_id"] = str(video["_id"])
