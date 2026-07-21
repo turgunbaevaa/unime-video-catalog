@@ -43,6 +43,18 @@ async def get_all_videos(include_deleted: bool = False):
     return videos
 
 
+@router.get("/{video_id}", response_model=VideoResponse)
+async def get_video(video_id: str):
+    if not ObjectId.is_valid(video_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid video ID format")
+
+    video = await videos_collection.find_one({"_id": ObjectId(video_id)})
+    if not video:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
+    video["_id"] = str(video["_id"])
+
+    return video
+
 @router.delete("/{video_id}")
 async def delete_video(video_id: str, permanent: bool = False):
     # 1. We check that the ID provided is in the correct MongoDB format

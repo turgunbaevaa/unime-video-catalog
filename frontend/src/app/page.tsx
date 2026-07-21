@@ -153,14 +153,25 @@ export default function Home() {
                   {/* Actions Block */}
                   <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 mt-auto">
                     <div className="flex justify-between items-center">
-                      <a
-                        href={video.azure_stream_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
-                      >
-                        Watch Video
-                      </a>
+                      
+                      {/* НОВЫЙ БЛОК: Ссылки "Watch Video" и "View Details" */}
+                      <div className="flex items-center gap-4">
+                        <a
+                          href={video.azure_stream_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+                        >
+                          Watch Video
+                        </a>
+                        <Link 
+                          href={`/videos/${uniqueId}`} 
+                          className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline transition-colors"
+                        >
+                          View Details &rarr;
+                        </Link>
+                      </div>
+
                       {video.is_deleted && (
                         <span className="text-xs font-semibold text-red-500 bg-red-50 px-2 py-1 rounded-md">
                           Deleted
