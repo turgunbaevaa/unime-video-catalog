@@ -29,22 +29,24 @@ class VideoCreate(BaseModel):
     tags: List[str] = Field(default=[], example=["History", "Rome"])
     azure_stream_url: HttpUrl = Field(..., example="https://web.microsoftstream.com/video/example-id")
 
-# 5. The complete video model (how it is stored in MongoDB and returned via the API)
+# 5. Model for UPDATING an existing video (all fields optional, only the ones
+# provided are applied)
+class VideoUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=3, max_length=200, example="Lezione di Storia Romana")
+    authors: Optional[List[str]] = Field(None, example=["Prof. Nicola Spada"])
+    date_recorded: Optional[datetime] = None
+    tags: Optional[List[str]] = Field(None, example=["History", "Rome"])
+    azure_stream_url: Optional[HttpUrl] = Field(None, example="https://web.microsoftstream.com/video/example-id")
+
+# 6. The complete video model (how it is stored in MongoDB and returned via the API)
 class VideoResponse(VideoCreate):
-    id: str = Field(..., alias="_id")
-    is_deleted: bool = Field(default=False)
+    id: str = Field(..., alias="_id", description="MongoDB ObjectId as string")
     ai_processing: AIData = Field(default_factory=AIData)
     opac_export: OPACExportData = Field(default_factory=OPACExportData)
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    uploaded_by: Optional[str] = None
+    uploaded_by: Optional[str] = Field(None, description="User ID who uploaded the video")
+    is_deleted: bool = Field(default=False, description="Soft-delete flag")
+    deleted_at: Optional[datetime] = Field(None, description="When the record was soft-deleted")
 
     class Config:
         populate_by_name = True # Allows FastAPI to correctly read the _id from MongoDB
-
-class VideoUpdate(BaseModel):
-    title: Optional[str] = None
-    authors: Optional[List[str]] = None
-    date_recorded: Optional[datetime] = None
-    tags: Optional[List[str]] = None
-    azure_stream_url: Optional[HttpUrl] = None
-    is_deleted: Optional[bool] = None
