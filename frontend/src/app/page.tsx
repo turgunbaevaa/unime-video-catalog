@@ -1,9 +1,59 @@
-// src/app/page.tsx
-import Link from "next/link";
-import { getVideos } from "@/lib/api"; 
+"use client";
 
-export default async function Home() {
-  const videos = await getVideos(true); 
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { getVideos, deleteVideo, Video } from "@/src/lib/api";
+
+export default function Home() {
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchVideos = async () => {
+    try {
+      setIsLoading(true);
+      const data = await getVideos();
+      setVideos(data);
+    } catch (error) {
+      console.error("Error loading videos:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchVideos();
+  }, []);
+
+  // Soft Delete function
+  const handleSoftDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this video?")) {
+      return; 
+    }
+
+    try {
+      await deleteVideo(id, false); // false = soft delete
+      await fetchVideos(); 
+    } catch (error) {
+      console.error("Failed to soft delete:", error);
+      alert("Error deleting video.");
+    }
+  };
+
+  // Permanent Delete function
+  const handlePermanentDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to PERMANENTLY delete this video? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      await deleteVideo(id, true); // true = permanent delete
+      await fetchVideos(); 
+    } catch (error) {
+      console.error("Failed to permanently delete:", error);
+      alert("Error deleting video permanently.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
       
@@ -26,7 +76,9 @@ export default async function Home() {
       {/* --- MAIN CONTENT --- */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         
-        {videos.length === 0 ? (
+        {isLoading ? (
+          <div className="text-center py-20 text-gray-500">Loading catalog...</div>
+        ) : videos.length === 0 ? (
           
           /* EMPTY STATE */
           <div className="flex flex-col items-center justify-center py-24 px-4 bg-white border border-gray-200 border-dashed rounded-2xl shadow-sm">
@@ -35,14 +87,10 @@ export default async function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
               </svg>
             </div>
-            
-            <h3 className="text-lg font-medium text-slate-900 mb-2">
-              Catalog is empty
-            </h3>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">Catalog is empty</h3>
             <p className="text-sm text-gray-500 text-center max-w-sm mb-6 leading-relaxed">
               There are no videos here yet. Be the first to upload material to the university database.
             </p>
-            
             <Link 
               href="/videos/new" 
               className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
@@ -55,54 +103,80 @@ export default async function Home() {
           
           /* VIDEO LIST STATE (Grid) */
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {videos.map((video, index) => (
-              <div 
-                key={video.id || (video as any)._id || index} 
-                className={`bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col ${video.is_deleted ? 'opacity-60 grayscale' : ''}`}
-              >
-                <h2 className="text-lg font-semibold text-slate-900 mb-3 line-clamp-2" title={video.title}>
-                  {video.title}
-                </h2>
-                
-                <div className="mb-4 flex-grow">
-                  <div className="mb-3">
-                    <span className="text-xs text-gray-400 font-medium uppercase tracking-wider block mb-1">Authors</span>
-                    <span className="text-sm text-slate-700 block line-clamp-1" title={video.authors.join(', ')}>
-                      {video.authors.join(', ')}
-                    </span>
+            {videos.map((video, index) => {
+              // Гарантируем наличие ключа для React
+              const uniqueKey = video.id || (video as any)._id || index;
+
+              return (
+                <div 
+                  key={uniqueKey} 
+                  className={`bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col ${video.is_deleted ? 'opacity-60 grayscale' : ''}`}
+                >
+                  <h2 className="text-lg font-semibold text-slate-900 mb-3 line-clamp-2" title={video.title}>
+                    {video.title}
+                  </h2>
+                  
+                  <div className="mb-4 flex-grow">
+                    <div className="mb-3">
+                      <span className="text-xs text-gray-400 font-medium uppercase tracking-wider block mb-1">Authors</span>
+                      <span className="text-sm text-slate-700 block line-clamp-1" title={video.authors.join(', ')}>
+                        {video.authors.join(', ')}
+                      </span>
+                    </div>
+
+                    {video.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {video.tags.map((tag, tagIdx) => (
+                          <span 
+                            key={tagIdx} 
+                            className="bg-gray-100 text-slate-600 text-[11px] font-medium px-2 py-0.5 rounded-full"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  {video.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {video.tags.map((tag, index) => (
-                        <span 
-                          key={index} 
-                          className="bg-gray-100 text-slate-600 text-[11px] font-medium px-2 py-0.5 rounded-full"
-                        >
-                          {tag}
+                  {/* Actions Block */}
+                  <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 mt-auto">
+                    <div className="flex justify-between items-center">
+                      <a 
+                        href={video.azure_stream_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+                      >
+                        Watch Video
+                      </a>
+                      {video.is_deleted && (
+                        <span className="text-xs font-semibold text-red-500 bg-red-50 px-2 py-1 rounded-md">
+                          Deleted
                         </span>
-                      ))}
+                      )}
                     </div>
-                  )}
+                    
+                    {/* Кнопки удаления */}
+                    <div className="flex gap-2">
+                      {!video.is_deleted && (
+                        <button 
+                          onClick={() => handleSoftDelete(uniqueKey)}
+                          className="flex-1 py-1.5 px-2 text-xs font-medium text-amber-700 bg-amber-50 rounded hover:bg-amber-100 transition-colors"
+                        >
+                          Soft Delete
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => handlePermanentDelete(uniqueKey)}
+                        className="flex-1 py-1.5 px-2 text-xs font-medium text-red-700 bg-red-50 rounded hover:bg-red-100 transition-colors"
+                      >
+                        Destroy
+                      </button>
+                    </div>
+                  </div>
                 </div>
-
-                <div className="flex justify-between items-center pt-4 border-t border-gray-100 mt-auto">
-                  <a 
-                    href={video.azure_stream_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
-                  >
-                    Watch Video
-                  </a>
-                  {video.is_deleted && (
-                    <span className="text-xs font-semibold text-red-500 bg-red-50 px-2 py-1 rounded-md">
-                      Deleted
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

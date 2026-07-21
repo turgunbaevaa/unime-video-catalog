@@ -58,7 +58,10 @@ export async function updateVideo(id: string, data: Partial<VideoCreate>): Promi
 
 // 5. Delete video (soft or permanent)
 export async function deleteVideo(id: string, permanent = false): Promise<void> {
-  const url = permanent ? `${API_BASE}/videos/${id}/permanent` : `${API_BASE}/videos/${id}`;
+  const url = permanent 
+    ? `${API_BASE}/videos/${id}?permanent=true` 
+    : `${API_BASE}/videos/${id}`;
+    
   const res = await fetch(url, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete video");
 }
