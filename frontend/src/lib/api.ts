@@ -76,7 +76,7 @@ export async function updateVideo(id: string, data: VideoUpdateInput): Promise<V
 // 5. Delete video (soft or permanent)
 export async function deleteVideo(id: string, permanent = false): Promise<void> {
   const url = permanent 
-    ? `${API_BASE}/videos/${id}?permanent=true` 
+    ? `${API_BASE}/videos/${id}/permanent` 
     : `${API_BASE}/videos/${id}`;
     
   const res = await fetch(url, { method: "DELETE" });
