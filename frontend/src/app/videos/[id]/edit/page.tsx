@@ -14,19 +14,16 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Состояние полей формы
   const [title, setTitle] = useState("");
   const [authors, setAuthors] = useState("");
   const [tags, setTags] = useState("");
   const [streamUrl, setStreamUrl] = useState("");
 
-  // Исходные данные для сравнения (чтобы отправлять только измененные поля)
   const [initialData, setInitialData] = useState<Video | null>(null);
 
   useEffect(() => {
     async function loadVideo() {
       try {
-        // Получаем все видео (или можно использовать отдельный get-запрос, если он есть)
         const videos = await getVideos(true);
         const video = videos.find((v: Video) => (v._id === videoId));
 
@@ -57,7 +54,6 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
     setError(null);
 
     try {
-      // Формируем объект только с измененными полями (требование F5)
       const updatedFields: any = {};
 
       if (title.trim() !== initialData.title) {
@@ -78,7 +74,6 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
         updatedFields.azure_stream_url = streamUrl.trim();
       }
 
-      // Если ничего не изменилось, просто возвращаем пользователя назад
       if (Object.keys(updatedFields).length === 0) {
         router.push("/");
         return;

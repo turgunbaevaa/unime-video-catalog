@@ -66,7 +66,7 @@ export default function Home() {
             UniMe <span className="text-gray-400 font-normal">Catalog</span>
           </h1>
 
-          {/* Обертка для кнопок справа с отступом между ними */}
+          {/* Button wrapper on the right with spacing between them */}
           <div className="flex items-center gap-3">
             <Link
               href="/videos/archive"
@@ -154,7 +154,7 @@ export default function Home() {
                   <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 mt-auto">
                     <div className="flex justify-between items-center">
                       
-                      {/* НОВЫЙ БЛОК: Ссылки "Watch Video" и "View Details" */}
+                      {/* New Block: "Watch Video" and "View Details" Links */}
                       <div className="flex items-center gap-4">
                         <a
                           href={video.azure_stream_url}

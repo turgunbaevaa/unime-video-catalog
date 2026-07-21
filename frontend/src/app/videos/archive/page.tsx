@@ -8,7 +8,7 @@ export default function TrashPage() {
   const [deletedVideos, setDeletedVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Модальное окно для окончательного удаления
+  // Confirmation Modal for Permanent Deletion
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     videoId: string | null;
@@ -36,7 +36,6 @@ export default function TrashPage() {
     fetchDeletedVideos();
   }, []);
 
-  // Функция восстановления видео в каталог
   const handleRestore = async (id: string) => {
     try {
       await updateVideo(id, { is_deleted: false });
@@ -47,7 +46,6 @@ export default function TrashPage() {
     }
   };
 
-  // Окончательное удаление
   const executePermanentDelete = async () => {
     if (!deleteModal.videoId) return;
 
@@ -166,7 +164,7 @@ export default function TrashPage() {
                       </span>
                     </div>
                     
-                    {/* Кнопки действий */}
+                    {/* Action Buttons */}
                     <div className="flex gap-2">
                       <button 
                         type="button"
