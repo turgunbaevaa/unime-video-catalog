@@ -1,6 +1,6 @@
 # Task list
 
-Work items implementing `PLAN.md`, split by track (topic, not person — see the staffing note in `PLAN.md`). One task ≈ one small PR. Nothing below is implemented yet.
+Work items implementing `PLAN.md`, split by track (topic, not person — see the staffing note in `PLAN.md`). One task ≈ one small PR.
 
 ## Supervisor track
 
@@ -10,20 +10,20 @@ Work items implementing `PLAN.md`, split by track (topic, not person — see the
 - [ ] **S4.** Produce the populated config file (`.env` values) for the student(s).
 - [ ] **S5.** Backend `app/auth.py` — JWT validation dependency (adapt from git.unime.it code), applied to video routes.
 - [ ] **S6.** NextAuth configuration example for the frontend.
-- [ ] **S7.** Ongoing: review and merge all PRs.
+- [x] **S7.** Ongoing: review and merge all PRs.
 
 ## Frontend track — Next.js UI *(currently staffed)*
 
-### Phase 1 (no auth)
+### Phase 1 (no auth) ✅ — completed
 
-- [ ] **F1.** Scaffold `frontend/` Next.js app (App Router); add CORS middleware to `app/main.py` (with supervisor).
-- [ ] **F2.** API client module: typed functions wrapping the five backend endpoints (list, get, create, update, delete/permanent).
-- [ ] **F3.** Video list page — table with title, authors, tags, deleted indicator; `?include_deleted=true` toggle.
-- [ ] **F4.** Create form — matching `VideoCreate` (title, authors[], date, tags[], azure_stream_url) with client-side validation mirroring the Pydantic rules.
-- [ ] **F5.** Edit form — `PATCH` with only changed fields.
-- [ ] **F6.** Detail view — full record incl. the `ai_processing` block (status badge, transcript/summary slots, empty-state for "pending").
-- [ ] **F7.** Delete actions — soft delete inline; permanent delete behind a confirmation dialog.
-- [ ] **F8.** Frontend setup README section, verified on a clean machine.
+- [x] **F1.** Scaffold `frontend/` Next.js app (App Router); CORS middleware added to `app/main.py`.
+- [x] **F2.** API client module (`frontend/src/lib/api.ts`) — typed functions wrapping all five backend endpoints.
+- [x] **F3.** Video list page — grid with title, authors, tags, deleted indicator, archive toggle.
+- [x] **F4.** Create form — fields matching `VideoCreate`, split-tags input, redirects to list on success.
+- [x] **F5.** Edit form — `PATCH` with only changed fields, pre-filled from existing data.
+- [x] **F6.** Detail view — full record incl. `ai_processing` block (status badge, transcript/summary slots, empty-state).
+- [x] **F7.** Delete actions — soft delete (archive) inline; permanent delete behind confirmation modal.
+- [x] **F8.** Frontend setup README in `frontend/README.md`.
 
 ### Phase 2 (auth integration)
 
@@ -54,3 +54,10 @@ Work items implementing `PLAN.md`, split by track (topic, not person — see the
 - The AI track is fully decoupled: AI1–AI4 need only S2, and no frontend work depends on it. If it stays unstaffed, the catalog (Phases 1–2) is still a complete, usable product.
 - S1 should happen early — it determines how much of Phase 3 applies to Stream-hosted videos.
 - F9–F10 wait on S3–S6. AI5 waits on AI2–AI3.
+
+## Housekeeping
+
+I vecchi branch `feature/*` sono stati mergiati in `main` e possono essere eliminati da remoto:
+```bash
+git push origin --delete feature/frontend-setup feature/api-client feature/video-list-page feature/new-video-form feature/delete-actions feature/ui-modal-confirm feature/archive-page feature/video-detail
+```
