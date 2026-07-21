@@ -2,11 +2,24 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getVideos, deleteVideo, Video } from "@/src/lib/api";
 
 export default function Home() {
+  const router = useRouter();
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Condition for controlling a modal window
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    videoId: string | null;
+    type: 'soft' | 'permanent' | null;
+  }>({
+    isOpen: false,
+    videoId: null,
+    type: null,
+  });
 
   const fetchVideos = async () => {
     try {
@@ -24,33 +37,22 @@ export default function Home() {
     fetchVideos();
   }, []);
 
-  // Soft Delete function
-  const handleSoftDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this video?")) {
-      return; 
-    }
-
-    try {
-      await deleteVideo(id, false); // false = soft delete
-      await fetchVideos(); 
-    } catch (error) {
-      console.error("Failed to soft delete:", error);
-      alert("Error deleting video.");
-    }
+  const confirmDelete = (id: string, type: 'soft' | 'permanent') => {
+    setDeleteModal({ isOpen: true, videoId: id, type });
   };
 
-  // Permanent Delete function
-  const handlePermanentDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to PERMANENTLY delete this video? This action cannot be undone.")) {
-      return;
-    }
+  const executeDelete = async () => {
+    const { videoId, type } = deleteModal;
+    if (!videoId) return;
 
     try {
-      await deleteVideo(id, true); // true = permanent delete
+      const isPermanent = type === 'permanent';
+      await deleteVideo(videoId, isPermanent);
       await fetchVideos(); 
+      setDeleteModal({ isOpen: false, videoId: null, type: null }); 
     } catch (error) {
-      console.error("Failed to permanently delete:", error);
-      alert("Error deleting video permanently.");
+      console.error("Failed to delete video:", error);
+      alert("Error deleting video.");
     }
   };
 
@@ -102,10 +104,10 @@ export default function Home() {
         ) : (
           
           /* VIDEO LIST STATE (Grid) */
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
             {videos.map((video, index) => {
-              // Гарантируем наличие ключа для React
-              const uniqueKey = video.id || (video as any)._id || index;
+              const uniqueId = video.id || (video as any)._id;
+              const uniqueKey = uniqueId || index;
 
               return (
                 <div 
@@ -156,21 +158,30 @@ export default function Home() {
                       )}
                     </div>
                     
-                    {/* Кнопки удаления */}
+                    {/* Updated buttons in a consistent style */}
                     <div className="flex gap-2">
+                      <button 
+                        type="button"
+                        onClick={() => router.push(`/videos/${uniqueId}/edit`)}
+                        className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
+                      >
+                        Edit
+                      </button>
                       {!video.is_deleted && (
                         <button 
-                          onClick={() => handleSoftDelete(uniqueKey)}
-                          className="flex-1 py-1.5 px-2 text-xs font-medium text-amber-700 bg-amber-50 rounded hover:bg-amber-100 transition-colors"
+                          type="button"
+                          onClick={() => confirmDelete(uniqueId, 'soft')}
+                          className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
                         >
-                          Soft Delete
+                          Archive
                         </button>
                       )}
                       <button 
-                        onClick={() => handlePermanentDelete(uniqueKey)}
-                        className="flex-1 py-1.5 px-2 text-xs font-medium text-red-700 bg-red-50 rounded hover:bg-red-100 transition-colors"
+                        type="button"
+                        onClick={() => confirmDelete(uniqueId, 'permanent')}
+                        className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors cursor-pointer shadow-sm"
                       >
-                        Destroy
+                        Delete
                       </button>
                     </div>
                   </div>
@@ -179,8 +190,44 @@ export default function Home() {
             })}
           </div>
         )}
-
       </main>
+
+      {/* Custom deletion confirmation modal window */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl relative pointer-events-auto">
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              Are you sure?
+            </h3>
+            <p className="text-gray-500 mb-6">
+              {deleteModal.type === 'permanent' 
+                ? "This will permanently delete the video. This action cannot be undone."
+                : "This will archive the video. It will be hidden from the main catalog."}
+            </p>
+            
+            <div className="flex justify-end gap-3 relative z-10">
+              <button
+                type="button"
+                onClick={() => setDeleteModal({ isOpen: false, videoId: null, type: null })}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeDelete}
+                className={`px-4 py-2 rounded-xl text-sm font-medium text-white transition-colors shadow-sm cursor-pointer ${
+                  deleteModal.type === 'permanent' 
+                    ? 'bg-red-600 hover:bg-red-700' 
+                    : 'bg-slate-900 hover:bg-slate-800'
+                }`}
+              >
+                {deleteModal.type === 'permanent' ? 'Delete' : 'Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

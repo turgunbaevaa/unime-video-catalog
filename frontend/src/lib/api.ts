@@ -17,6 +17,14 @@ export interface VideoCreate {
   azure_stream_url: string;
 }
 
+export interface VideoUpdateInput {
+  title?: string;
+  authors?: string[];
+  date_recorded?: string;
+  tags?: string[];
+  azure_stream_url?: string;
+}
+
 const API_BASE = "http://127.0.0.1:8000/api/v1";
 
 // 1. List videos
@@ -46,12 +54,15 @@ export async function createVideo(data: VideoCreate): Promise<Video> {
 }
 
 // 4. Update video (PATCH)
-export async function updateVideo(id: string, data: Partial<VideoCreate>): Promise<Video> {
+export async function updateVideo(id: string, data: VideoUpdateInput): Promise<Video> {
   const res = await fetch(`${API_BASE}/videos/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(data),
   });
+
   if (!res.ok) throw new Error("Failed to update video");
   return res.json();
 }
