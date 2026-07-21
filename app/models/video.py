@@ -31,18 +31,20 @@ class VideoCreate(BaseModel):
 
 # 5. The complete video model (how it is stored in MongoDB and returned via the API)
 class VideoResponse(VideoCreate):
-    id: str = Field(..., alias="_id", description="MongoDB ObjectId as string")
+    id: str = Field(..., alias="_id")
+    is_deleted: bool = Field(default=False)
     ai_processing: AIData = Field(default_factory=AIData)
     opac_export: OPACExportData = Field(default_factory=OPACExportData)
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    uploaded_by: Optional[str] = Field(None, description="User ID who uploaded the video")
+    uploaded_by: Optional[str] = None
 
     class Config:
         populate_by_name = True # Allows FastAPI to correctly read the _id from MongoDB
 
 class VideoUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=3, max_length=200)
-    authors: Optional[List[str]] = Field(None)
-    date_recorded: Optional[datetime] = Field(None)
-    tags: Optional[List[str]] = Field(None)
-    azure_stream_url: Optional[HttpUrl] = Field(None)
+    title: Optional[str] = None
+    authors: Optional[List[str]] = None
+    date_recorded: Optional[datetime] = None
+    tags: Optional[List[str]] = None
+    azure_stream_url: Optional[HttpUrl] = None
+    is_deleted: Optional[bool] = None
