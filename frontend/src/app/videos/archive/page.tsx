@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { getVideos, updateVideo, deleteVideo, Video } from "@/src/lib/api";
 
 export default function TrashPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   
   const currentPage = Number(searchParams.get("page")) || 1;
   const limit = 12;
@@ -60,7 +61,16 @@ export default function TrashPage() {
 
     try {
       await updateVideo(restoreModal.videoId, { is_deleted: false });
-      await fetchDeletedVideos();
+      
+      const data = await getVideos(false, currentPage, limit, true);
+      
+      if (data.items.length === 0 && currentPage > 1) {
+        router.push(`/videos/archive?page=${currentPage - 1}`);
+      } else {
+        setDeletedVideos(data.items);
+        setTotalPages(Math.ceil(data.total_count / limit));
+      }
+
       setRestoreModal({ isOpen: false, videoId: null });
     } catch (error) {
       console.error("Failed to restore video:", error);
@@ -73,7 +83,16 @@ export default function TrashPage() {
 
     try {
       await deleteVideo(deleteModal.videoId, true);
-      await fetchDeletedVideos();
+      
+      const data = await getVideos(false, currentPage, limit, true);
+      
+      if (data.items.length === 0 && currentPage > 1) {
+        router.push(`/videos/archive?page=${currentPage - 1}`);
+      } else {
+        setDeletedVideos(data.items);
+        setTotalPages(Math.ceil(data.total_count / limit));
+      }
+
       setDeleteModal({ isOpen: false, videoId: null });
     } catch (error) {
       console.error("Failed to delete video permanently:", error);

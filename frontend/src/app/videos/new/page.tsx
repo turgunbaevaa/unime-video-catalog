@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createVideo } from "@/src/lib/api";
 
 export default function NewVideoPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const returnPage = searchParams.get("returnPage") || "1";
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +36,7 @@ export default function NewVideoPage() {
         azure_stream_url: streamUrl,
       });
 
-      router.push("/");
+      router.push(`/?page=${returnPage}`);
       router.refresh(); 
     } catch (err) {
       console.error(err);
@@ -47,7 +51,8 @@ export default function NewVideoPage() {
       <main className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <div className="mb-8">
-          <Link href="/" className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-4 inline-block">
+          {/* Кнопка "Назад" тоже возвращает на ту же страницу */}
+          <Link href={`/?page=${returnPage}`} className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-4 inline-block">
             &larr; Back to Catalog
           </Link>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
@@ -131,7 +136,7 @@ export default function NewVideoPage() {
 
           <div className="mt-8 flex justify-end gap-3 pt-5 border-t border-gray-100">
             <Link 
-              href="/"
+              href={`/?page=${returnPage}`}
               className="px-5 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Cancel

@@ -63,7 +63,16 @@ export default function Home() {
     try {
       const isPermanent = type === 'permanent';
       await deleteVideo(videoId, isPermanent);
-      await fetchVideos(); 
+      
+      const data = await getVideos(false, currentPage, limit);
+      
+      if (data.items.length === 0 && currentPage > 1) {
+        router.push(`/?page=${currentPage - 1}`);
+      } else {
+        setVideos(data.items);
+        setTotalPages(Math.ceil(data.total_count / limit));
+      }
+
       setDeleteModal({ isOpen: false, videoId: null, type: null });
     } catch (error) {
       console.error("Failed to delete video:", error);
@@ -92,7 +101,7 @@ export default function Home() {
                 </Link>
 
                 <Link
-                  href="/videos/new"
+                  href={`/videos/new?returnPage=${currentPage}`}
                   className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
                 >
                   + Add New Video
@@ -138,7 +147,7 @@ export default function Home() {
             </p>
             {isAdmin && (
               <Link
-                href="/videos/new"
+                href={`/videos/new?returnPage=${currentPage}`}
                 className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
               >
                 Upload Video
