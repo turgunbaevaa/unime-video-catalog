@@ -2,10 +2,18 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { getVideos, updateVideo, deleteVideo, Video } from "@/src/lib/api";
 
 export default function TrashPage() {
+  const searchParams = useSearchParams();
+  
+  // 1. Get current page from URL parameters
+  const currentPage = Number(searchParams.get("page")) || 1;
+  const limit = 12;
+
   const [deletedVideos, setDeletedVideos] = useState<Video[]>([]);
+  const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
 
   // Confirmation Modal for Permanent Deletion
@@ -20,11 +28,12 @@ export default function TrashPage() {
   const fetchDeletedVideos = async () => {
     try {
       setIsLoading(true);
-      const allVideos = await getVideos(true);
-      console.log("Videos from API:", allVideos);
-      console.log("First video:", allVideos[0]);
-      const filtered = allVideos.filter((v: Video) => v.is_deleted);
-      setDeletedVideos(filtered);
+      // 2. Fetch ONLY deleted videos with pagination
+      // parameters: includeDeleted=false, page, limit, onlyDeleted=true
+      const data = await getVideos(false, currentPage, limit, true);
+      
+      setDeletedVideos(data.items);
+      setTotalPages(Math.ceil(data.total_count / limit));
     } catch (error) {
       console.error("Error loading archive:", error);
     } finally {
@@ -32,14 +41,15 @@ export default function TrashPage() {
     }
   };
 
+  // 3. Re-fetch when the current page changes
   useEffect(() => {
     fetchDeletedVideos();
-  }, []);
+  }, [currentPage]);
 
   const handleRestore = async (id: string) => {
     try {
       await updateVideo(id, { is_deleted: false });
-      await fetchDeletedVideos();
+      await fetchDeletedVideos(); // Refresh list after restoring
     } catch (error) {
       console.error("Failed to restore video:", error);
       alert("Error restoring video.");
@@ -51,7 +61,7 @@ export default function TrashPage() {
 
     try {
       await deleteVideo(deleteModal.videoId, true);
-      await fetchDeletedVideos();
+      await fetchDeletedVideos(); // Refresh list after permanent deletion
       setDeleteModal({ isOpen: false, videoId: null });
     } catch (error) {
       console.error("Failed to delete video permanently:", error);
@@ -78,7 +88,7 @@ export default function TrashPage() {
             href="/" 
             className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
           >
-            ← Back to Catalog
+            &larr; Back to Catalog
           </Link>
         </div>
       </header>
@@ -187,6 +197,45 @@ export default function TrashPage() {
             })}
           </div>
         )}
+
+        {/* --- PAGINATION CONTROLS --- */}
+        {!isLoading && totalPages > 1 && (
+          <div className="flex justify-center items-center space-x-4 mt-12 mb-8">
+            {/* Previous Page Button */}
+            {currentPage > 1 ? (
+              <Link
+                href={`/videos/archive?page=${currentPage - 1}`}
+                className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm"
+              >
+                Previous
+              </Link>
+            ) : (
+              <button disabled className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed font-medium text-sm">
+                Previous
+              </button>
+            )}
+
+            {/* Page Indicator */}
+            <span className="text-sm text-gray-600 font-medium">
+              Page {currentPage} of {totalPages}
+            </span>
+
+            {/* Next Page Button */}
+            {currentPage < totalPages ? (
+              <Link
+                href={`/videos/archive?page=${currentPage + 1}`}
+                className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm"
+              >
+                Next
+              </Link>
+            ) : (
+              <button disabled className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed font-medium text-sm">
+                Next
+              </button>
+            )}
+          </div>
+        )}
+
       </main>
 
       {/* Custom deletion confirmation modal window */}

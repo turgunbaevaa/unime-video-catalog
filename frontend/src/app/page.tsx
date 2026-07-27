@@ -2,12 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getVideos, deleteVideo, Video } from "@/src/lib/api";
 
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // 1. Get the current page from the URL (default to 1)
+  const currentPage = Number(searchParams.get("page")) || 1;
+  const limit = 12;
+
   const [videos, setVideos] = useState<Video[]>([]);
+  const [totalPages, setTotalPages] = useState(1); // State to store total pages
   const [isLoading, setIsLoading] = useState(true);
 
   // Condition for controlling a modal window
@@ -24,8 +31,12 @@ export default function Home() {
   const fetchVideos = async () => {
     try {
       setIsLoading(true);
-      const data = await getVideos();
-      setVideos(data);
+      // 2. Pass pagination parameters to the API call
+      const data = await getVideos(false, currentPage, limit);
+      
+      // 3. Extract items and calculate total pages from the new response format
+      setVideos(data.items);
+      setTotalPages(Math.ceil(data.total_count / limit));
     } catch (error) {
       console.error("Error loading videos:", error);
     } finally {
@@ -33,9 +44,10 @@ export default function Home() {
     }
   };
 
+  // 4. Re-fetch videos whenever the currentPage changes
   useEffect(() => {
     fetchVideos();
-  }, []);
+  }, [currentPage]);
 
   const confirmDelete = (id: string, type: 'soft' | 'permanent') => {
     setDeleteModal({ isOpen: true, videoId: id, type });
@@ -48,7 +60,7 @@ export default function Home() {
     try {
       const isPermanent = type === 'permanent';
       await deleteVideo(videoId, isPermanent);
-      await fetchVideos();
+      await fetchVideos(); // Refresh the current page after deletion
       setDeleteModal({ isOpen: false, videoId: null, type: null });
     } catch (error) {
       console.error("Failed to delete video:", error);
@@ -154,7 +166,7 @@ export default function Home() {
                   <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 mt-auto">
                     <div className="flex justify-between items-center">
                       
-                      {/* New Block: "Watch Video" and "View Details" Links */}
+                      {/* "Watch Video" and "View Details" Links */}
                       <div className="flex items-center gap-4">
                         <a
                           href={video.azure_stream_url}
@@ -211,6 +223,45 @@ export default function Home() {
             })}
           </div>
         )}
+
+        {/* --- PAGINATION CONTROLS --- */}
+        {!isLoading && totalPages > 1 && (
+          <div className="flex justify-center items-center space-x-4 mt-12 mb-8">
+            {/* Previous Page Button */}
+            {currentPage > 1 ? (
+              <Link
+                href={`/?page=${currentPage - 1}`}
+                className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm"
+              >
+                Previous
+              </Link>
+            ) : (
+              <button disabled className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed font-medium text-sm">
+                Previous
+              </button>
+            )}
+
+            {/* Page Indicator */}
+            <span className="text-sm text-gray-600 font-medium">
+              Page {currentPage} of {totalPages}
+            </span>
+
+            {/* Next Page Button */}
+            {currentPage < totalPages ? (
+              <Link
+                href={`/?page=${currentPage + 1}`}
+                className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm"
+              >
+                Next
+              </Link>
+            ) : (
+              <button disabled className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed font-medium text-sm">
+                Next
+              </button>
+            )}
+          </div>
+        )}
+
       </main>
 
       {/* Custom deletion confirmation modal window */}

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Query
 from typing import List
-from app.models.video import VideoCreate, VideoResponse, VideoUpdate
+from app.models.video import VideoCreate, VideoResponse, VideoUpdate, PaginatedVideoList
 from app.database import videos_collection
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -40,15 +40,33 @@ async def create_video(video: VideoCreate):
     return created_video
 
 
-@router.get("/", response_model=List[VideoResponse])
-async def get_all_videos(include_deleted: bool = False):
-    query = {} if include_deleted else {"is_deleted": {"$ne": True}}
-    videos = await videos_collection.find(query).to_list(100)
+@router.get("/", response_model=PaginatedVideoList)
+async def get_all_videos(
+        include_deleted: bool = False,
+        only_deleted: bool = False,
+        page: int = Query(1, ge=1, description="Page number"),
+        limit: int = Query(12, ge=1, le=100, description="Number of items per page")
+):
+    if only_deleted:
+        query = {"is_deleted": True}
+    elif include_deleted:
+        query = {}
+    else:
+        query = {"is_deleted": {"$ne": True}}
+
+    total_count = await videos_collection.count_documents(query)
+    skip = (page - 1) * limit
+    videos = await videos_collection.find(query).skip(skip).to_list(length=limit)
+
     for video in videos:
         video["_id"] = str(video["_id"])
 
-    return videos
-
+    return {
+        "items": videos,
+        "total_count": total_count,
+        "page": page,
+        "limit": limit
+    }
 
 @router.get("/{video_id}", response_model=VideoResponse)
 async def get_video(video_id: str):

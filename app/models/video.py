@@ -35,6 +35,7 @@ class VideoUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=3, max_length=200, example="Lezione di Storia Romana")
     authors: Optional[List[str]] = Field(None, example=["Prof. Nicola Spada"])
     date_recorded: Optional[datetime] = None
+    is_deleted: Optional[bool] = None
     tags: Optional[List[str]] = Field(None, example=["History", "Rome"])
     azure_stream_url: Optional[HttpUrl] = Field(None, example="https://web.microsoftstream.com/video/example-id")
 
@@ -50,3 +51,10 @@ class VideoResponse(VideoCreate):
 
     class Config:
         populate_by_name = True # Allows FastAPI to correctly read the _id from MongoDB
+
+
+class PaginatedVideoList(BaseModel):
+    items: List[VideoResponse]
+    total_count: int
+    page: int
+    limit: int

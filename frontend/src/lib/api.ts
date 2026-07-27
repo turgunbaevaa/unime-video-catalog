@@ -10,6 +10,13 @@ export interface Video {
   // We can add ai_processing fields here later in Phase 3/4
 }
 
+export interface PaginatedVideos {
+  items: Video[];
+  total_count: number;
+  page: number;
+  limit: number;
+}
+
 export interface VideoCreate {
   title: string;
   authors: string[];
@@ -29,10 +36,28 @@ export interface VideoUpdateInput {
 const API_BASE = "http://127.0.0.1:8000/api/v1";
 
 // 1. List videos
-export async function getVideos(includeDeleted = false): Promise<Video[]> {
-  const url = `${API_BASE}/videos/${includeDeleted ? "?include_deleted=true" : ""}`;
+export async function getVideos(
+  includeDeleted = false,
+  page = 1,
+  limit = 12,
+  onlyDeleted = false 
+): Promise<PaginatedVideos> {
+  const params = new URLSearchParams();
+  
+  if (includeDeleted) {
+    params.append("include_deleted", "true");
+  }
+  if (onlyDeleted) {
+    params.append("only_deleted", "true"); 
+  }
+  params.append("page", page.toString());
+  params.append("limit", limit.toString());
+
+  const url = `${API_BASE}/videos/?${params.toString()}`;
+  
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch videos");
+  
   return res.json();
 }
 
