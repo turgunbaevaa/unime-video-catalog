@@ -4,10 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getVideos, deleteVideo, Video } from "@/src/lib/api";
+import { useSession, signOut } from "next-auth/react";
 
 export default function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const { data: session } = useSession();
+  const isAdmin = !!session; 
   
   // 1. Get the current page from the URL (default to 1)
   const currentPage = Number(searchParams.get("page")) || 1;
@@ -17,7 +21,7 @@ export default function Home() {
   const [totalPages, setTotalPages] = useState(1); // State to store total pages
   const [isLoading, setIsLoading] = useState(true);
 
-  // Condition for controlling a modal window
+  // Condition for controlling deletion modal
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     videoId: string | null;
@@ -28,13 +32,13 @@ export default function Home() {
     type: null,
   });
 
+  // State for the Logout modal window
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+
   const fetchVideos = async () => {
     try {
       setIsLoading(true);
-      // 2. Pass pagination parameters to the API call
       const data = await getVideos(false, currentPage, limit);
-      
-      // 3. Extract items and calculate total pages from the new response format
       setVideos(data.items);
       setTotalPages(Math.ceil(data.total_count / limit));
     } catch (error) {
@@ -44,7 +48,6 @@ export default function Home() {
     }
   };
 
-  // 4. Re-fetch videos whenever the currentPage changes
   useEffect(() => {
     fetchVideos();
   }, [currentPage]);
@@ -60,7 +63,7 @@ export default function Home() {
     try {
       const isPermanent = type === 'permanent';
       await deleteVideo(videoId, isPermanent);
-      await fetchVideos(); // Refresh the current page after deletion
+      await fetchVideos(); 
       setDeleteModal({ isOpen: false, videoId: null, type: null });
     } catch (error) {
       console.error("Failed to delete video:", error);
@@ -78,21 +81,39 @@ export default function Home() {
             UniMe <span className="text-gray-400 font-normal">Catalog</span>
           </h1>
 
-          {/* Button wrapper on the right with spacing between them */}
           <div className="flex items-center gap-3">
-            <Link
-              href="/videos/archive"
-              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-            >
-              Archive
-            </Link>
+            {isAdmin ? (
+              <>
+                <Link
+                  href="/videos/archive"
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                >
+                  Archive
+                </Link>
 
-            <Link
-              href="/videos/new"
-              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
-            >
-              + Add New Video
-            </Link>
+                <Link
+                  href="/videos/new"
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
+                >
+                  + Add New Video
+                </Link>
+                
+                {/* Logout button now has a consistent design and opens a modal window */}
+                <button
+                  onClick={() => setIsLogoutModalOpen(true)}
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm"
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <Link
+                href="/login"
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Login (Admin)
+              </Link>
+            )}
           </div>
         </div>
       </header>
@@ -115,12 +136,14 @@ export default function Home() {
             <p className="text-sm text-gray-500 text-center max-w-sm mb-6 leading-relaxed">
               There are no videos here yet. Be the first to upload material to the university database.
             </p>
-            <Link
-              href="/videos/new"
-              className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-            >
-              Upload Video
-            </Link>
+            {isAdmin && (
+              <Link
+                href="/videos/new"
+                className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                Upload Video
+              </Link>
+            )}
           </div>
 
         ) : (
@@ -162,11 +185,8 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* Actions Block */}
                   <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 mt-auto">
                     <div className="flex justify-between items-center">
-                      
-                      {/* "Watch Video" and "View Details" Links */}
                       <div className="flex items-center gap-4">
                         <a
                           href={video.azure_stream_url}
@@ -191,32 +211,33 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* Updated buttons in a consistent style */}
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/videos/${uniqueId}/edit`)}
-                        className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
-                      >
-                        Edit
-                      </button>
-                      {!video.is_deleted && (
+                    {isAdmin && (
+                      <div className="flex gap-2 mt-3">
                         <button
                           type="button"
-                          onClick={() => confirmDelete(uniqueId, 'soft')}
+                          onClick={() => router.push(`/videos/${uniqueId}/edit`)}
                           className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
                         >
-                          Archive
+                          Edit
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => confirmDelete(uniqueId, 'permanent')}
-                        className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors cursor-pointer shadow-sm"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                        {!video.is_deleted && (
+                          <button
+                            type="button"
+                            onClick={() => confirmDelete(uniqueId, 'soft')}
+                            className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
+                          >
+                            Archive
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => confirmDelete(uniqueId, 'permanent')}
+                          className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors cursor-pointer shadow-sm"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -227,7 +248,6 @@ export default function Home() {
         {/* --- PAGINATION CONTROLS --- */}
         {!isLoading && totalPages > 1 && (
           <div className="flex justify-center items-center space-x-4 mt-12 mb-8">
-            {/* Previous Page Button */}
             {currentPage > 1 ? (
               <Link
                 href={`/?page=${currentPage - 1}`}
@@ -241,12 +261,10 @@ export default function Home() {
               </button>
             )}
 
-            {/* Page Indicator */}
             <span className="text-sm text-gray-600 font-medium">
               Page {currentPage} of {totalPages}
             </span>
 
-            {/* Next Page Button */}
             {currentPage < totalPages ? (
               <Link
                 href={`/?page=${currentPage + 1}`}
@@ -264,7 +282,9 @@ export default function Home() {
 
       </main>
 
-      {/* Custom deletion confirmation modal window */}
+      {/* --- MODALS --- */}
+
+      {/* Custom deletion confirmation modal */}
       {deleteModal.isOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl relative pointer-events-auto">
@@ -294,6 +314,37 @@ export default function Home() {
                   }`}
               >
                 {deleteModal.type === 'permanent' ? 'Delete' : 'Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logout confirmation modal */}
+      {isLogoutModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl relative pointer-events-auto">
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              Sign Out
+            </h3>
+            <p className="text-gray-500 mb-6">
+              Are you sure you want to log out of the administrator account? You will not be able to edit or delete videos.
+            </p>
+
+            <div className="flex justify-end gap-3 relative z-10">
+              <button
+                type="button"
+                onClick={() => setIsLogoutModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => signOut()}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm cursor-pointer"
+              >
+                Logout
               </button>
             </div>
           </div>
