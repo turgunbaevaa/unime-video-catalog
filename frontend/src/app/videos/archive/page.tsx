@@ -8,7 +8,6 @@ import { getVideos, updateVideo, deleteVideo, Video } from "@/src/lib/api";
 export default function TrashPage() {
   const searchParams = useSearchParams();
   
-  // 1. Get current page from URL parameters
   const currentPage = Number(searchParams.get("page")) || 1;
   const limit = 12;
 
@@ -25,11 +24,18 @@ export default function TrashPage() {
     videoId: null,
   });
 
+  // Confirmation Modal for Restoration
+  const [restoreModal, setRestoreModal] = useState<{
+    isOpen: boolean;
+    videoId: string | null;
+  }>({
+    isOpen: false,
+    videoId: null,
+  });
+
   const fetchDeletedVideos = async () => {
     try {
       setIsLoading(true);
-      // 2. Fetch ONLY deleted videos with pagination
-      // parameters: includeDeleted=false, page, limit, onlyDeleted=true
       const data = await getVideos(false, currentPage, limit, true);
       
       setDeletedVideos(data.items);
@@ -41,15 +47,21 @@ export default function TrashPage() {
     }
   };
 
-  // 3. Re-fetch when the current page changes
   useEffect(() => {
     fetchDeletedVideos();
   }, [currentPage]);
 
-  const handleRestore = async (id: string) => {
+  const confirmRestore = (id: string) => {
+    setRestoreModal({ isOpen: true, videoId: id });
+  };
+
+  const executeRestore = async () => {
+    if (!restoreModal.videoId) return;
+
     try {
-      await updateVideo(id, { is_deleted: false });
-      await fetchDeletedVideos(); // Refresh list after restoring
+      await updateVideo(restoreModal.videoId, { is_deleted: false });
+      await fetchDeletedVideos();
+      setRestoreModal({ isOpen: false, videoId: null });
     } catch (error) {
       console.error("Failed to restore video:", error);
       alert("Error restoring video.");
@@ -61,7 +73,7 @@ export default function TrashPage() {
 
     try {
       await deleteVideo(deleteModal.videoId, true);
-      await fetchDeletedVideos(); // Refresh list after permanent deletion
+      await fetchDeletedVideos();
       setDeleteModal({ isOpen: false, videoId: null });
     } catch (error) {
       console.error("Failed to delete video permanently:", error);
@@ -178,7 +190,7 @@ export default function TrashPage() {
                     <div className="flex gap-2">
                       <button 
                         type="button"
-                        onClick={() => handleRestore(uniqueId)}
+                        onClick={() => confirmRestore(uniqueId)}
                         className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer shadow-sm"
                       >
                         Restore
@@ -201,7 +213,6 @@ export default function TrashPage() {
         {/* --- PAGINATION CONTROLS --- */}
         {!isLoading && totalPages > 1 && (
           <div className="flex justify-center items-center space-x-4 mt-12 mb-8">
-            {/* Previous Page Button */}
             {currentPage > 1 ? (
               <Link
                 href={`/videos/archive?page=${currentPage - 1}`}
@@ -215,12 +226,10 @@ export default function TrashPage() {
               </button>
             )}
 
-            {/* Page Indicator */}
             <span className="text-sm text-gray-600 font-medium">
               Page {currentPage} of {totalPages}
             </span>
 
-            {/* Next Page Button */}
             {currentPage < totalPages ? (
               <Link
                 href={`/videos/archive?page=${currentPage + 1}`}
@@ -263,6 +272,37 @@ export default function TrashPage() {
                 className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm cursor-pointer"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom restore confirmation modal window */}
+      {restoreModal.isOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl relative pointer-events-auto">
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              Restore Video?
+            </h3>
+            <p className="text-gray-500 mb-6">
+              This will restore the video and return it to the main catalog.
+            </p>
+            
+            <div className="flex justify-end gap-3 relative z-10">
+              <button
+                type="button"
+                onClick={() => setRestoreModal({ isOpen: false, videoId: null })}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeRestore}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-sm cursor-pointer"
+              >
+                Restore
               </button>
             </div>
           </div>
