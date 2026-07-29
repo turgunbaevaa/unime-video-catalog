@@ -39,8 +39,7 @@ class VideoCreate(BaseModel):
     part_number: Optional[int] = Field(None, description="The part number (e.g., 1 for CD1, 2 for CD2)")
 
 
-# 5. Model for UPDATING an existing video (all fields optional, only the ones
-# provided are applied)
+# 5. Model for UPDATING an existing video (all fields optional, only the ones provided are applied)
 class VideoUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=3, max_length=200, example="Lezione di Storia Romana")
     authors: Optional[List[str]] = Field(None, example=["Prof. Nicola Spada"])

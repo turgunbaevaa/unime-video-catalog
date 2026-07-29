@@ -32,10 +32,10 @@ function NewVideoContent() {
     try {
       await createVideo({
         title,
-        authors: authorsArray, // Передаем массив
-        tags: tagsArray,       // Передаем массив
-        azure_stream_url: streamUrl, // Исправлено имя переменной state
-        folder_id: folderId || "",   // Гарантируем строку
+        authors: authorsArray, 
+        tags: tagsArray,       
+        azure_stream_url: streamUrl, 
+        folder_id: folderId || "",   
       });
 
       if (folderId) {
@@ -58,7 +58,7 @@ function NewVideoContent() {
       <main className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <div className="mb-8">
-          {/* Кнопка "Назад" тоже возвращает на ту же страницу */}
+          {/* Back button */}
           <Link href={`/?page=${returnPage}`} className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-4 inline-block">
             &larr; Back to Catalog
           </Link>

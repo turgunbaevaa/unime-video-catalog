@@ -175,7 +175,7 @@ export async function deleteFolder(id: string, permanent = false): Promise<void>
   }
 }
 
-// Восстановление папки из архива
+// Restoring a Folder from an Archive
 export async function updateFolder(id: string, data: { is_deleted?: boolean }): Promise<Folder> {
   const res = await fetch(`${API_BASE}/folders/${id}`, {
     method: "PATCH",

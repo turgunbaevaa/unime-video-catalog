@@ -16,7 +16,7 @@ function ArchiveContent() {
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Новые стейты для выбора папки при восстановлении
+  // New states for selecting a folder during restore
   const [activeFolders, setActiveFolders] = useState<Folder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("");
 
@@ -56,7 +56,6 @@ function ArchiveContent() {
     fetchDeletedVideos();
   }, [currentPage]);
 
-  // Загружаем список активных папок перед открытием модалки восстановления
   const confirmRestore = async (id: string) => {
     try {
       const foldersData = await getFolders(1, 100, false);
@@ -80,7 +79,6 @@ function ArchiveContent() {
     }
 
     try {
-      // Восстанавливаем видео И одновременно переносим в выбранную папку
       await updateVideo(restoreModal.videoId, { 
         is_deleted: false,
         folder_id: selectedFolderId 

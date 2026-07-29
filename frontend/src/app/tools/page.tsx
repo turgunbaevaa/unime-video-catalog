@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-// Убедитесь, что порт совпадает с вашим бэкендом (FastAPI)
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function ToolsPage() {
@@ -17,7 +16,6 @@ export default function ToolsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  // Защита страницы: если сессия загружается или пользователя нет
   if (status === "loading") {
     return <div className="text-center py-20 text-gray-500">Verifying access...</div>;
   }
@@ -61,7 +59,7 @@ export default function ToolsPage() {
 
       const data = await response.json();
       setMessage({ text: data.message || "Database successfully restored!", type: "success" });
-      setFile(null); // Очищаем файл после успеха
+      setFile(null); 
     } catch (error) {
       setMessage({ text: "Error during restore. Check console for details.", type: "error" });
       console.error(error);
@@ -87,7 +85,7 @@ export default function ToolsPage() {
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
         
-        {/* Инфо профиля администратора */}
+        {/* Admin profile */}
         <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm mb-8 flex items-center gap-4">
           <div className="w-12 h-12 bg-slate-900 text-white rounded-full flex items-center justify-center text-xl font-bold">
             {session.user?.name?.charAt(0) || "A"}
@@ -98,7 +96,7 @@ export default function ToolsPage() {
           </div>
         </div>
 
-        {/* Уведомления */}
+        {/* Notifications */}
         {message && (
           <div className={`p-4 mb-6 rounded-lg border ${message.type === "success" ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>
             {message.text}
@@ -107,7 +105,7 @@ export default function ToolsPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           
-          {/* Блок 1: Экспорт */}
+          {/* Block 1: Export */}
           <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
             <h3 className="text-lg font-semibold mb-2">Export Data</h3>
             <p className="text-sm text-gray-500 mb-6 leading-relaxed">
@@ -132,7 +130,7 @@ export default function ToolsPage() {
             </div>
           </div>
 
-          {/* Блок 2: Импорт/Восстановление (ОПАСНАЯ ЗОНА) */}
+          {/* Block 2: Import/Restore (DANGER ZONE) */}
           <div className="bg-white rounded-xl p-6 border border-red-200 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-red-500"></div>
             <h3 className="text-lg font-semibold text-red-600 mb-2">Danger Zone: Restore</h3>
@@ -161,7 +159,7 @@ export default function ToolsPage() {
         </div>
       </main>
 
-      {/* --- МОДАЛКА ПОДТВЕРЖДЕНИЯ ВОССТАНОВЛЕНИЯ --- */}
+      {/* --- CONFIRMATION MODAL WINDOW --- */}
       {isRestoreModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
