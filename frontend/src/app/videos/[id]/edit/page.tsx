@@ -24,8 +24,8 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
   useEffect(() => {
     async function loadVideo() {
       try {
-        const videos = await getVideos(true);
-        const video = videos.find((v: Video) => (v._id === videoId));
+        const data = await getVideos(true);
+        const video = data.items.find((v: Video) => (v._id === videoId));
 
         if (video) {
           setInitialData(video);

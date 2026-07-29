@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getVideos, updateVideo, deleteVideo, Video } from "@/src/lib/api";
 
-export default function TrashPage() {
+function ArchiveContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
@@ -328,5 +328,13 @@ export default function TrashPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function TrashPage() {
+  return (
+    <Suspense fallback={<div className="text-center py-20 text-gray-500">Loading archive...</div>}>
+      <ArchiveContent />
+    </Suspense>
   );
 }

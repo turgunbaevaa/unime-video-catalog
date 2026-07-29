@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createVideo } from "@/src/lib/api";
 
-export default function NewVideoPage() {
+function NewVideoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -153,5 +153,13 @@ export default function NewVideoPage() {
 
       </main>
     </div>
+  );
+}
+
+export default function NewVideoPage() {
+  return (
+    <Suspense fallback={<div className="text-center py-20 text-gray-500">Loading form...</div>}>
+      <NewVideoContent />
+    </Suspense>
   );
 }
