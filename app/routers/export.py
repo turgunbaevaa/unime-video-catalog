@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, UploadFile, File, HTTPException
 import xml.etree.ElementTree as ET
 from app.database import videos_collection
+import json
+from bson import ObjectId
 
 router = APIRouter(
     prefix="/api/v1/export",
@@ -56,4 +58,65 @@ async def export_to_marcxml():
     xml_str = ET.tostring(collection, encoding="utf-8", method="xml")
 
     # 5. We return a response with the correct media type so that the browser recognizes it as XML
-    return Response(content=xml_str, media_type="application/xml")
+    return Response(
+        content=xml_str,
+        media_type="application/xml",
+        headers={"Content-Disposition": "attachment; filename=unime_catalog_marcxml.xml"}
+    )
+
+
+@router.get("/backup", response_class=Response)
+async def export_database_json():
+    """Download the entire database as a JSON backup file"""
+    videos = await videos_collection.find().to_list(10000)
+
+    # 2. Convert MongoDB ObjectId to string for JSON serialization
+    for video in videos:
+        video["_id"] = str(video["_id"])
+
+    # 3. Convert data to a formatted JSON string
+    json_data = json.dumps(videos, ensure_ascii=False, indent=2, default=str)
+
+    # 4. Return the file as a downloadable response
+    return Response(
+        content=json_data,
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=unime_db_backup.json"}
+    )
+
+
+@router.post("/restore")
+async def import_database_json(file: UploadFile = File(...)):
+    """Restore the database from a JSON backup file"""
+    try:
+        # 1. Read and parse the uploaded file
+        content = await file.read()
+        data = json.loads(content)
+
+        # 2. Check if the uploaded JSON is an array (list of videos)
+        if not isinstance(data, list):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file format. Expected a JSON array (List)."
+            )
+
+        # 3. DANGER: Clear the current database before restoring
+        # (Assuming the backup contains the full complete state)
+        await videos_collection.delete_many({})
+
+        # 4. Convert string IDs back to MongoDB ObjectIds
+        for item in data:
+            if "_id" in item:
+                item["_id"] = ObjectId(item["_id"])
+
+        # 5. Insert the restored data into the database
+        if data:
+            await videos_collection.insert_many(data)
+
+        return {"message": f"Successfully restored {len(data)} videos!"}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error during restore: {str(e)}"
+        )
