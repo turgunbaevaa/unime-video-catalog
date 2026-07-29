@@ -31,6 +31,7 @@ export interface VideoUpdateInput {
   date_recorded?: string;
   tags?: string[];
   azure_stream_url?: string;
+  folder_id?: string;
   is_deleted?: boolean;
 }
 

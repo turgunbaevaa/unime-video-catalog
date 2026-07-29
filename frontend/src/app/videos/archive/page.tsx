@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { getVideos, updateVideo, deleteVideo, Video } from "@/src/lib/api";
+import { getVideos, updateVideo, deleteVideo, getFolders, Video, Folder } from "@/src/lib/api";
 
 function ArchiveContent() {
   const searchParams = useSearchParams();
@@ -15,6 +15,10 @@ function ArchiveContent() {
   const [deletedVideos, setDeletedVideos] = useState<Video[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Новые стейты для выбора папки при восстановлении
+  const [activeFolders, setActiveFolders] = useState<Folder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("");
 
   // Confirmation Modal for Permanent Deletion
   const [deleteModal, setDeleteModal] = useState<{
@@ -52,15 +56,35 @@ function ArchiveContent() {
     fetchDeletedVideos();
   }, [currentPage]);
 
-  const confirmRestore = (id: string) => {
-    setRestoreModal({ isOpen: true, videoId: id });
+  // Загружаем список активных папок перед открытием модалки восстановления
+  const confirmRestore = async (id: string) => {
+    try {
+      const foldersData = await getFolders(1, 100, false);
+      setActiveFolders(foldersData.items);
+      if (foldersData.items.length > 0) {
+        setSelectedFolderId(foldersData.items[0]._id);
+      } else {
+        setSelectedFolderId("");
+      }
+      setRestoreModal({ isOpen: true, videoId: id });
+    } catch (error) {
+      console.error("Failed to load folders:", error);
+      alert("Error loading active folders.");
+    }
   };
 
   const executeRestore = async () => {
-    if (!restoreModal.videoId) return;
+    if (!restoreModal.videoId || !selectedFolderId) {
+      alert("Please select a target folder.");
+      return;
+    }
 
     try {
-      await updateVideo(restoreModal.videoId, { is_deleted: false });
+      // Восстанавливаем видео И одновременно переносим в выбранную папку
+      await updateVideo(restoreModal.videoId, { 
+        is_deleted: false,
+        folder_id: selectedFolderId 
+      });
       
       const data = await getVideos(false, currentPage, limit, undefined, true);
       
@@ -297,16 +321,39 @@ function ArchiveContent() {
         </div>
       )}
 
-      {/* Custom restore confirmation modal window */}
+      {/* Custom restore confirmation modal window with folder selection */}
       {restoreModal.isOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl relative pointer-events-auto">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl relative pointer-events-auto">
             <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Restore Video?
+              Restore Video
             </h3>
-            <p className="text-gray-500 mb-6">
-              This will restore the video and return it to the main catalog.
+            <p className="text-gray-500 mb-4 text-sm">
+              Select the target folder where you want to restore this video.
             </p>
+
+            {activeFolders.length === 0 ? (
+              <div className="mb-6 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm">
+                No active folders found. Please create a folder first before restoring.
+              </div>
+            ) : (
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Target Folder <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedFolderId}
+                  onChange={(e) => setSelectedFolderId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none text-sm bg-white"
+                >
+                  {activeFolders.map((folder) => (
+                    <option key={folder._id} value={folder._id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             
             <div className="flex justify-end gap-3 relative z-10">
               <button
@@ -318,8 +365,9 @@ function ArchiveContent() {
               </button>
               <button
                 type="button"
+                disabled={activeFolders.length === 0}
                 onClick={executeRestore}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-sm cursor-pointer"
+                className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Restore
               </button>
