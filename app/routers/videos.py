@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Query
-from typing import List
+from typing import Optional
 from app.models.video import VideoCreate, VideoResponse, VideoUpdate, PaginatedVideoList
 from app.database import videos_collection
 from bson import ObjectId
@@ -45,7 +45,8 @@ async def get_all_videos(
         include_deleted: bool = False,
         only_deleted: bool = False,
         page: int = Query(1, ge=1, description="Page number"),
-        limit: int = Query(12, ge=1, le=100, description="Number of items per page")
+        limit: int = Query(12, ge=1, le=100, description="Number of items per page"),
+        folder_id: Optional[str] = None  
 ):
     if only_deleted:
         query = {"is_deleted": True}
@@ -54,9 +55,13 @@ async def get_all_videos(
     else:
         query = {"is_deleted": {"$ne": True}}
 
+    if folder_id:
+        query["folder_id"] = folder_id
+
     total_count = await videos_collection.count_documents(query)
     skip = (page - 1) * limit
-    videos = await videos_collection.find(query).skip(skip).to_list(length=limit)
+
+    videos = await videos_collection.find(query).sort("created_at", -1).skip(skip).to_list(length=limit)
 
     for video in videos:
         video["_id"] = str(video["_id"])

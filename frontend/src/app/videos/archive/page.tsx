@@ -37,7 +37,7 @@ function ArchiveContent() {
   const fetchDeletedVideos = async () => {
     try {
       setIsLoading(true);
-      const data = await getVideos(false, currentPage, limit, true);
+      const data = await getVideos(false, currentPage, limit, undefined, true);
       
       setDeletedVideos(data.items);
       setTotalPages(Math.ceil(data.total_count / limit));
@@ -62,7 +62,7 @@ function ArchiveContent() {
     try {
       await updateVideo(restoreModal.videoId, { is_deleted: false });
       
-      const data = await getVideos(false, currentPage, limit, true);
+      const data = await getVideos(false, currentPage, limit, undefined, true);
       
       if (data.items.length === 0 && currentPage > 1) {
         router.push(`/videos/archive?page=${currentPage - 1}`);
@@ -84,7 +84,7 @@ function ArchiveContent() {
     try {
       await deleteVideo(deleteModal.videoId, true);
       
-      const data = await getVideos(false, currentPage, limit, true);
+      const data = await getVideos(false, currentPage, limit, undefined, true);
       
       if (data.items.length === 0 && currentPage > 1) {
         router.push(`/videos/archive?page=${currentPage - 1}`);

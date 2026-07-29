@@ -19,6 +19,7 @@ function NewVideoContent() {
   const [authors, setAuthors] = useState("");
   const [tags, setTags] = useState("");
   const [streamUrl, setStreamUrl] = useState("");
+  const folderId = searchParams.get("folderId");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,12 +32,17 @@ function NewVideoContent() {
     try {
       await createVideo({
         title,
-        authors: authorsArray,
-        tags: tagsArray,
-        azure_stream_url: streamUrl,
+        authors: authorsArray, // Передаем массив
+        tags: tagsArray,       // Передаем массив
+        azure_stream_url: streamUrl, // Исправлено имя переменной state
+        folder_id: folderId || "",   // Гарантируем строку
       });
 
-      router.push(`/?page=${returnPage}`);
+      if (folderId) {
+        router.push(`/folders/${folderId}`);
+      } else {
+        router.push(`/?page=${returnPage}`);
+      }
       router.refresh(); 
     } catch (err) {
       console.error(err);
@@ -45,6 +51,7 @@ function NewVideoContent() {
       setIsLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 py-12">

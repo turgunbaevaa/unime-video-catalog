@@ -8,3 +8,4 @@ client = AsyncIOMotorClient(MONGO_DETAILS)
 database = client.unime_video_catalog
 
 videos_collection = database.get_collection("videos")
+folders_collection = database.get_collection("folders")
