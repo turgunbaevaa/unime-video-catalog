@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { getVideo, Video } from "@/src/lib/api";
 
 export default function VideoDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const [video, setVideo] = useState<Video | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -67,12 +68,21 @@ export default function VideoDetailPage() {
               Details
             </span>
           </div>
-          <Link 
-            href="/" 
-            className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+          
+          <button 
+            onClick={() => {
+              if (video.is_deleted) {
+                router.push('/videos/archive');
+              } else if (video.folder_id) {
+                router.push(`/folders/${video.folder_id}`);
+              } else {
+                router.push('/');
+              }
+            }}
+            className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
           >
-            ← Back
-          </Link>
+            &larr; {video.is_deleted ? "Back to Archive" : "Back"}
+          </button>
         </div>
       </header>
 
@@ -81,8 +91,15 @@ export default function VideoDetailPage() {
         
         {/* LEFT COLUMN: Video Info */}
         <div className="lg:col-span-1 flex flex-col gap-6">
-          <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-900 mb-4 leading-tight">
+          <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm relative">
+            
+            {video.is_deleted && (
+              <div className="absolute -top-3 -right-3 bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold px-3 py-1 rounded-full shadow-sm">
+                Archived
+              </div>
+            )}
+
+            <h2 className="text-2xl font-bold text-slate-900 mb-4 leading-tight pr-4">
               {video.title}
             </h2>
             

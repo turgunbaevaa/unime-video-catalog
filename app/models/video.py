@@ -32,12 +32,11 @@ class VideoCreate(BaseModel):
     authors: List[str] = Field(..., example=["Prof. Nicola Spada"])
     date_recorded: datetime = Field(default_factory=datetime.utcnow)
     tags: List[str] = Field(default=[], example=["History", "Rome"])
-    azure_stream_url: HttpUrl = Field(..., example="https://web.microsoftstream.com/video/example-id")
-
-    folder_id: Optional[str] = Field(None, description="ID of the folder this video belongs to")
+    azure_stream_url: str = Field(...,
+                                  example="https://web.microsoftstream.com/video/example-id")
+    folder_id: str = Field(..., description="ID of the folder this video belongs to")
     group_id: Optional[str] = Field(None, description="Shared ID to group multiple CDs/parts together")
     part_number: Optional[int] = Field(None, description="The part number (e.g., 1 for CD1, 2 for CD2)")
-
 
 # 5. Model for UPDATING an existing video (all fields optional, only the ones provided are applied)
 class VideoUpdate(BaseModel):

@@ -7,6 +7,8 @@ export interface Video {
   tags: string[];
   azure_stream_url: string;
   folder_id: string; 
+  group_id?: string;      
+  part_number?: number;
   is_deleted: boolean;
 }
 
@@ -23,6 +25,8 @@ export interface VideoCreate {
   tags: string[];
   azure_stream_url: string;
   folder_id: string; 
+  group_id?: string;      
+  part_number?: number;
 }
 
 export interface VideoUpdateInput {
@@ -32,6 +36,8 @@ export interface VideoUpdateInput {
   tags?: string[];
   azure_stream_url?: string;
   folder_id?: string;
+  group_id?: string;     
+  part_number?: number;
   is_deleted?: boolean;
 }
 
