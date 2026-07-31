@@ -3,9 +3,10 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { getVideos, getFolderById, deleteVideo, deleteFolder, updateVideo, getFolders, Video, Folder } from "@/src/lib/api";
+import { getVideos, getFolderById, deleteVideo, deleteFolder, updateVideo, updateFolder, getFolders, Video, Folder } from "@/src/lib/api";
 import { useSession } from "next-auth/react";
 
+// Интерфейс для сгруппированного плейлиста
 interface PlaylistItem {
   isPlaylist: boolean;
   groupId: string;
@@ -13,6 +14,7 @@ interface PlaylistItem {
   activePartIndex: number;
 }
 
+// Тип, объединяющий одиночные видео и плейлисты для рендера
 type DisplayItem = Video | PlaylistItem;
 
 function FolderContent() {
@@ -25,34 +27,46 @@ function FolderContent() {
   const isAdmin = !!session;
 
   const currentPage = Number(searchParams.get("page")) || 1;
+  const sortParam = searchParams.get("sort") || "created_at_desc";
+  const qParam = searchParams.get("q") || "";
   const limit = 12;
 
   const [folder, setFolder] = useState<Folder | null>(null);
   
-  const [rawVideos, setRawVideos] = useState<Video[]>([]);
-  
+  // Processed display items (playlists + singles)
   const [displayItems, setDisplayItems] = useState<DisplayItem[]>([]);
   
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [folderSearch, setFolderSearch] = useState(qParam);
 
+  // Edit folder modal
+  const [isEditFolderOpen, setIsEditFolderOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [isSavingFolder, setIsSavingFolder] = useState(false);
+
+  // Стейты для восстановления видео
   const [restoreModal, setRestoreModal] = useState<{ isOpen: boolean; videoIds: string[]; }>({ isOpen: false, videoIds: [] });
   const [activeFolders, setActiveFolders] = useState<Folder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("");
 
+  // Стейт для удаления (теперь принимает массив videoIds)
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
-    videoId: string | null;
+    videoIds: string[]; 
     type: 'soft' | 'permanent' | null;
-  }>({ isOpen: false, videoId: null, type: null });
+  }>({ isOpen: false, videoIds: [], type: null });
 
   const [folderDeleteModal, setFolderDeleteModal] = useState<{
     isOpen: boolean;
     type: "soft" | "permanent" | null;
   }>({ isOpen: false, type: null });
 
+  // Стейт для красивого отображения ошибки при удалении папки
   const [folderDeleteError, setFolderDeleteError] = useState<string | null>(null);
 
+  // Функция для группировки видео в плейлисты
   const groupVideos = (videos: Video[]): DisplayItem[] => {
     const grouped = new Map<string, Video[]>();
     const singles: Video[] = [];
@@ -71,6 +85,7 @@ function FolderContent() {
     const displayList: DisplayItem[] = [...singles];
 
     grouped.forEach((groupVideos, groupId) => {
+      // Сортируем части по порядку (если part_number есть)
       const sortedVideos = groupVideos.sort((a, b) => {
         return (a.part_number || 0) - (b.part_number || 0);
       });
@@ -87,6 +102,10 @@ function FolderContent() {
   };
 
   useEffect(() => {
+    setFolderSearch(qParam);
+  }, [qParam]);
+
+  useEffect(() => {
     const loadFolderAndVideos = async () => {
       try {
         setIsLoading(true);
@@ -94,11 +113,18 @@ function FolderContent() {
         setFolder(folderData);
 
         const isArchived = folderData.is_deleted ? true : undefined;
-        const videosData = await getVideos(false, currentPage, limit, folderId, isArchived);
+        const videosData = await getVideos(
+          false,
+          currentPage,
+          limit,
+          folderId,
+          isArchived,
+          qParam || undefined,
+          sortParam
+        );
         
-        setRawVideos(videosData.items);
         setDisplayItems(groupVideos(videosData.items));
-        setTotalPages(Math.ceil(videosData.total_count / limit));
+        setTotalPages(Math.ceil(videosData.total_count / limit) || 1);
       } catch (error) {
         console.error("Error loading folder data:", error);
       } finally {
@@ -109,9 +135,56 @@ function FolderContent() {
     if (folderId) {
       loadFolderAndVideos();
     }
-  }, [folderId, currentPage]);
+  }, [folderId, currentPage, sortParam, qParam]);
 
-  // Changing the active track within a playlist
+  const buildFolderQuery = (overrides: { page?: number; sort?: string; q?: string }) => {
+    const params = new URLSearchParams();
+    const page = overrides.page ?? currentPage;
+    const sort = overrides.sort ?? sortParam;
+    const q = overrides.q ?? qParam;
+    if (page > 1) params.set("page", String(page));
+    if (sort && sort !== "created_at_desc") params.set("sort", sort);
+    if (q.trim()) params.set("q", q.trim());
+    const qs = params.toString();
+    return qs ? `/folders/${folderId}?${qs}` : `/folders/${folderId}`;
+  };
+
+  const handleSortChange = (value: string) => {
+    router.push(buildFolderQuery({ page: 1, sort: value }));
+  };
+
+  const handleFolderSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    router.push(buildFolderQuery({ page: 1, q: folderSearch }));
+  };
+
+  const openEditFolder = () => {
+    if (!folder) return;
+    setEditName(folder.name);
+    setEditDesc(folder.description || "");
+    setIsEditFolderOpen(true);
+  };
+
+  const saveFolderEdits = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!folder || !editName.trim()) return;
+    try {
+      setIsSavingFolder(true);
+      const updated = await updateFolder(folderId, {
+        name: editName.trim(),
+        description: editDesc,
+      });
+      setFolder(updated);
+      setIsEditFolderOpen(false);
+    } catch (error) {
+      console.error("Failed to update folder:", error);
+      alert("Error updating folder.");
+    } finally {
+      setIsSavingFolder(false);
+    }
+  };
+
+  // Смена активного диска внутри плейлиста
   const handlePlaylistChange = (groupId: string, newIndex: number) => {
     setDisplayItems(prevItems => 
       prevItems.map(item => {
@@ -123,30 +196,36 @@ function FolderContent() {
     );
   };
 
-  const confirmDelete = (id: string, type: 'soft' | 'permanent') => {
-    setDeleteModal({ isOpen: true, videoId: id, type });
+  const confirmDelete = (ids: string[], type: 'soft' | 'permanent') => {
+    setDeleteModal({ isOpen: true, videoIds: ids, type });
   };
 
   const executeDelete = async () => {
-    const { videoId, type } = deleteModal;
-    if (!videoId) return;
+    const { videoIds, type } = deleteModal;
+    if (videoIds.length === 0) return;
 
     try {
-      await deleteVideo(videoId, type === 'permanent');
+      await Promise.all(
+        videoIds.map(id => deleteVideo(id, type === 'permanent'))
+      );
+    
       const isArchived = folder?.is_deleted ? true : undefined;
-      const data = await getVideos(false, currentPage, limit, folderId, isArchived);
-      
-      if (data.items.length === 0 && currentPage > 1) {
-        router.push(`/folders/${folderId}?page=${currentPage - 1}`);
-      } else {
-        setRawVideos(data.items);
-        setDisplayItems(groupVideos(data.items));
-        setTotalPages(Math.ceil(data.total_count / limit));
-      }
-      setDeleteModal({ isOpen: false, videoId: null, type: null });
+      const data = await getVideos(
+        false,
+        currentPage,
+        limit,
+        folderId,
+        isArchived,
+        qParam || undefined,
+        sortParam
+      );
+    
+      setDisplayItems(groupVideos(data.items));
+      setTotalPages(Math.ceil(data.total_count / limit));
+    
+      setDeleteModal({ isOpen: false, videoIds: [], type: null });
     } catch (error) {
-      console.error("Failed to delete video:", error);
-      alert("Error deleting video.");
+      console.error("Failed to delete videos:", error);
     }
   };
 
@@ -176,8 +255,15 @@ function FolderContent() {
         restoreModal.videoIds.map(id => updateVideo(id, { is_deleted: false, folder_id: selectedFolderId }))
       );
       const isArchived = folder?.is_deleted ? true : undefined;
-      const data = await getVideos(false, currentPage, limit, folderId, isArchived);
-      setRawVideos(data.items);
+      const data = await getVideos(
+        false,
+        currentPage,
+        limit,
+        folderId,
+        isArchived,
+        qParam || undefined,
+        sortParam
+      );
       setDisplayItems(groupVideos(data.items));
       setRestoreModal({ isOpen: false, videoIds: [] });
     } catch (error) {
@@ -193,8 +279,9 @@ function FolderContent() {
       setFolderDeleteModal({ isOpen: false, type: null });
       router.push("/");
       router.refresh(); 
-    } catch (err: any) {
-      setFolderDeleteError(err.message || "Error deleting folder. Ensure it is empty.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Error deleting folder. Ensure it is empty.";
+      setFolderDeleteError(message);
     }
   };
 
@@ -240,6 +327,16 @@ function FolderContent() {
               <>
                 {!folder.is_deleted && (
                   <button
+                    type="button"
+                    onClick={openEditFolder}
+                    className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                    title="Edit Folder"
+                  >
+                    Edit Folder
+                  </button>
+                )}
+                {!folder.is_deleted && (
+                  <button
                     onClick={() => setFolderDeleteModal({ isOpen: true, type: 'soft' })}
                     className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
                     title="Archive Folder"
@@ -277,8 +374,55 @@ function FolderContent() {
       {/* --- CONTENT --- */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {folder.description && (
-          <p className="text-gray-500 mb-8 max-w-2xl">{folder.description}</p>
+          <p className="text-gray-500 mb-4 max-w-2xl">{folder.description}</p>
         )}
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-8">
+          <form onSubmit={handleFolderSearch} className="flex-1 flex gap-2">
+            <input
+              type="search"
+              value={folderSearch}
+              onChange={(e) => setFolderSearch(e.target.value)}
+              placeholder="Search videos in this folder..."
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Search
+            </button>
+            {qParam && (
+              <Link
+                href={buildFolderQuery({ page: 1, q: "" })}
+                className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-slate-800"
+              >
+                Clear
+              </Link>
+            )}
+          </form>
+          <div className="flex items-center gap-2">
+            <label htmlFor="folder-sort" className="text-sm text-gray-500 whitespace-nowrap">
+              Sort
+            </label>
+            <select
+              id="folder-sort"
+              value={sortParam}
+              onChange={(e) => handleSortChange(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none"
+            >
+              <option value="created_at_desc">Newest first</option>
+              <option value="created_at_asc">Oldest first</option>
+              <option value="title_asc">Title A–Z</option>
+              <option value="title_desc">Title Z–A</option>
+            </select>
+          </div>
+          <p className="text-xs text-gray-400 sm:ml-auto">
+            {folder.video_count ?? displayItems.length}{" "}
+            {(folder.video_count ?? displayItems.length) === 1 ? "video" : "videos"}
+            {qParam ? " matching" : ""}
+          </p>
+        </div>
 
         {displayItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 px-4 bg-white border border-gray-200 border-dashed rounded-2xl shadow-sm">
@@ -287,11 +431,15 @@ function FolderContent() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
               </svg>
             </div>
-            <h3 className="text-lg font-medium text-slate-900 mb-2">Folder is empty</h3>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">
+              {qParam ? "No matching videos" : "Folder is empty"}
+            </h3>
             <p className="text-sm text-gray-500 text-center max-w-sm mb-6 leading-relaxed">
-              There are no videos uploaded to this folder yet.
+              {qParam
+                ? `No videos in this folder match “${qParam}”.`
+                : "There are no videos uploaded to this folder yet."}
             </p>
-            {isAdmin && !folder.is_deleted && (
+            {isAdmin && !folder.is_deleted && !qParam && (
               <Link
                 href={`/videos/new?folderId=${folderId}&returnPage=${currentPage}`}
                 className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
@@ -302,10 +450,12 @@ function FolderContent() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
-            {displayItems.map((item, index) => {
+            {displayItems.map((item) => {
               
               if ('isPlaylist' in item) {
-                const activeVideo = item.videos[item.activePartIndex];
+                // ПРЕДОХРАНИТЕЛЬ: защищает от краша при удалении одной из частей плейлиста
+                const safeIndex = Math.min(item.activePartIndex, Math.max(0, item.videos.length - 1));
+                const activeVideo = item.videos[safeIndex];
                 
                 return (
                   <div key={item.groupId} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col">
@@ -376,8 +526,8 @@ function FolderContent() {
                               <button type="button" onClick={() => router.push(`/videos/${activeVideo._id}/edit`)} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                                 Edit
                               </button>
-                              <button type="button" onClick={() => confirmDelete(activeVideo._id, 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
-                                Archive
+                              <button type="button" onClick={() => confirmDelete(item.videos.map(v => v._id), 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
+                                Archive Series
                               </button>
                             </>
                           ) : (
@@ -385,8 +535,8 @@ function FolderContent() {
                               Restore Series
                             </button>
                           )}
-                          <button type="button" onClick={() => confirmDelete(activeVideo._id, 'permanent')} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors shadow-sm cursor-pointer">
-                            Delete
+                          <button type="button" onClick={() => confirmDelete(item.videos.map(v => v._id), 'permanent')} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors shadow-sm cursor-pointer">
+                            Delete Series
                           </button>
                         </div>
                       )}
@@ -445,7 +595,7 @@ function FolderContent() {
                               <button type="button" onClick={() => router.push(`/videos/${video._id}/edit`)} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                                 Edit
                               </button>
-                              <button type="button" onClick={() => confirmDelete(video._id, 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
+                              <button type="button" onClick={() => confirmDelete([video._id], 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                                 Archive
                               </button>
                             </>
@@ -454,7 +604,7 @@ function FolderContent() {
                               Restore
                             </button>
                           )}
-                          <button type="button" onClick={() => confirmDelete(video._id, 'permanent')} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors shadow-sm cursor-pointer">
+                          <button type="button" onClick={() => confirmDelete([video._id], 'permanent')} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors shadow-sm cursor-pointer">
                             Delete
                           </button>
                         </div>
@@ -471,7 +621,7 @@ function FolderContent() {
         {!isLoading && totalPages > 1 && (
           <div className="flex justify-center items-center space-x-4 mt-12 mb-8">
             {currentPage > 1 ? (
-              <Link href={`/folders/${folderId}?page=${currentPage - 1}`} className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm">
+              <Link href={buildFolderQuery({ page: currentPage - 1 })} className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm">
                 Previous
               </Link>
             ) : (
@@ -481,7 +631,7 @@ function FolderContent() {
             )}
             <span className="text-sm text-gray-600 font-medium">Page {currentPage} of {totalPages}</span>
             {currentPage < totalPages ? (
-              <Link href={`/folders/${folderId}?page=${currentPage + 1}`} className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm">
+              <Link href={buildFolderQuery({ page: currentPage + 1 })} className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm">
                 Next
               </Link>
             ) : (
@@ -493,6 +643,52 @@ function FolderContent() {
         )}
       </main>
 
+      {isEditFolderOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Edit Folder</h3>
+            <form onSubmit={saveFolderEdits}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Folder Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 outline-none text-sm"
+                />
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 outline-none text-sm resize-none"
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsEditFolderOpen(false)}
+                  disabled={isSavingFolder}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingFolder || !editName.trim()}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {isSavingFolder ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* --- MODAL VIEW TO DELETE VIDEO --- */}
       {deleteModal.isOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
@@ -500,11 +696,11 @@ function FolderContent() {
             <h3 className="text-xl font-semibold text-gray-900 mb-2">Are you sure?</h3>
             <p className="text-gray-500 mb-6">
               {deleteModal.type === 'permanent'
-                ? "This will permanently delete the video. This action cannot be undone."
-                : "This will archive the video. It will be hidden from this folder."}
+                ? "This will permanently delete the selected item(s). This action cannot be undone."
+                : "This will archive the selected item(s). They will be hidden from this folder."}
             </p>
             <div className="flex justify-end gap-3 relative z-10">
-              <button type="button" onClick={() => setDeleteModal({ isOpen: false, videoId: null, type: null })} className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer">Cancel</button>
+              <button type="button" onClick={() => setDeleteModal({ isOpen: false, videoIds: [], type: null })} className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer">Cancel</button>
               <button type="button" onClick={executeDelete} className={`px-4 py-2 rounded-xl text-sm font-medium text-white transition-colors shadow-sm cursor-pointer ${deleteModal.type === 'permanent' ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-900 hover:bg-slate-800'}`}>
                 {deleteModal.type === 'permanent' ? 'Delete' : 'Archive'}
               </button>

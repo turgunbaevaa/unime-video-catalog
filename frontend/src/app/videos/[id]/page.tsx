@@ -46,7 +46,7 @@ export default function VideoDetailPage() {
   }
 
   // AI Processing status helpers
-  const aiStatus = (video as any).ai_processing?.status || "pending";
+  const aiStatus = video.ai_processing?.status || "pending";
   const statusColors: Record<string, string> = {
     pending: "text-gray-600 bg-gray-100 border-gray-200",
     processing: "text-blue-700 bg-blue-50 border-blue-200",
@@ -172,7 +172,7 @@ export default function VideoDetailPage() {
                 <div>
                   <h4 className="text-sm font-semibold text-slate-800 mb-2">Summary</h4>
                   <div className="text-sm text-gray-600 bg-gray-50 rounded-xl p-4 border border-gray-100 leading-relaxed">
-                    {(video as any).ai_processing?.llm_summary || "No summary available."}
+                    {video.ai_processing?.llm_summary || "No summary available."}
                   </div>
                 </div>
 
@@ -180,7 +180,7 @@ export default function VideoDetailPage() {
                 <div>
                   <h4 className="text-sm font-semibold text-slate-800 mb-2">Transcript</h4>
                   <div className="text-sm text-gray-600 bg-gray-50 rounded-xl p-4 border border-gray-100 h-64 overflow-y-auto leading-relaxed whitespace-pre-wrap">
-                    {(video as any).ai_processing?.whisper_transcript || "No transcript available."}
+                    {video.ai_processing?.whisper_transcript || "No transcript available."}
                   </div>
                 </div>
               </div>

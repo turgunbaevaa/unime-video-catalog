@@ -2,8 +2,14 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { getVideos, updateVideo, Video } from "@/src/lib/api";
+import {
+  getVideo,
+  updateVideo,
+  getFolders,
+  Video,
+  Folder,
+  VideoUpdateInput,
+} from "@/src/lib/api";
 
 export default function EditVideoPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -18,25 +24,27 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
   const [authors, setAuthors] = useState("");
   const [tags, setTags] = useState("");
   const [streamUrl, setStreamUrl] = useState("");
+  const [folderId, setFolderId] = useState("");
+  const [folders, setFolders] = useState<Folder[]>([]);
 
   const [initialData, setInitialData] = useState<Video | null>(null);
 
   useEffect(() => {
     async function loadVideo() {
       try {
-        const data = await getVideos(true);
-        const video = data.items.find((v: Video) => (v._id === videoId));
+        const [video, foldersData] = await Promise.all([
+          getVideo(videoId),
+          getFolders(1, 100, false),
+        ]);
 
-        if (video) {
-          setInitialData(video);
-          setTitle(video.title || "");
-          setAuthors(video.authors ? video.authors.join(", ") : "");
-          setTags(video.tags ? video.tags.join(", ") : "");
-          setStreamUrl(video.azure_stream_url || "");
-        } else {
-          setError("Video not found");
-        }
-      } catch (err) {
+        setInitialData(video);
+        setTitle(video.title || "");
+        setAuthors(video.authors ? video.authors.join(", ") : "");
+        setTags(video.tags ? video.tags.join(", ") : "");
+        setStreamUrl(video.azure_stream_url || "");
+        setFolderId(video.folder_id || "");
+        setFolders(foldersData.items);
+      } catch {
         setError("Failed to load video details");
       } finally {
         setIsLoading(false);
@@ -54,18 +62,18 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
     setError(null);
 
     try {
-      const updatedFields: any = {};
+      const updatedFields: VideoUpdateInput = {};
 
       if (title.trim() !== initialData.title) {
         updatedFields.title = title.trim();
       }
 
-      const newAuthorsArray = authors.split(",").map(a => a.trim()).filter(Boolean);
+      const newAuthorsArray = authors.split(",").map((a) => a.trim()).filter(Boolean);
       if (JSON.stringify(newAuthorsArray) !== JSON.stringify(initialData.authors)) {
         updatedFields.authors = newAuthorsArray;
       }
 
-      const newTagsArray = tags.split(",").map(t => t.trim()).filter(Boolean);
+      const newTagsArray = tags.split(",").map((t) => t.trim()).filter(Boolean);
       if (JSON.stringify(newTagsArray) !== JSON.stringify(initialData.tags)) {
         updatedFields.tags = newTagsArray;
       }
@@ -74,14 +82,20 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
         updatedFields.azure_stream_url = streamUrl.trim();
       }
 
+      if (folderId && folderId !== initialData.folder_id) {
+        updatedFields.folder_id = folderId;
+      }
+
+      const targetFolder = folderId || initialData.folder_id;
+
       if (Object.keys(updatedFields).length === 0) {
-        router.push("/");
+        router.push(targetFolder ? `/folders/${targetFolder}` : "/");
         return;
       }
 
       await updateVideo(videoId, updatedFields);
-      router.push("/");
-    } catch (err) {
+      router.push(targetFolder ? `/folders/${targetFolder}` : "/");
+    } catch {
       setError("Failed to update video. Check input data.");
       setIsSaving(false);
     }
@@ -91,21 +105,25 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
     return <div className="text-center py-20 text-gray-500">Loading video data...</div>;
   }
 
-  // --- EDITING LOCK FOR DELETED VIDEOS ---
   if (initialData?.is_deleted) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center font-sans">
         <div className="w-16 h-16 mb-4 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center">
           <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
           </svg>
         </div>
         <h2 className="text-2xl font-bold text-slate-900 mb-2">Video is Archived</h2>
         <p className="text-gray-500 mb-6 max-w-md">
           This video has been moved to the archive. You cannot edit it unless you restore it first.
         </p>
-        <button 
-          onClick={() => router.push('/videos/archive')} 
+        <button
+          onClick={() => router.push("/videos/archive")}
           className="px-5 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
         >
           Go to Archive
@@ -117,10 +135,12 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-xl mx-auto bg-white border border-gray-200 rounded-2xl p-8 shadow-sm">
-        
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-xl font-semibold text-slate-900">Edit Video</h1>
-          <button onClick={() => router.back()} className="text-sm font-medium text-gray-500 hover:text-gray-800">
+          <button
+            onClick={() => router.back()}
+            className="text-sm font-medium text-gray-500 hover:text-gray-800"
+          >
             Cancel
           </button>
         </div>
@@ -133,7 +153,9 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Title</label>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
+              Title
+            </label>
             <input
               type="text"
               required
@@ -144,7 +166,34 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Authors (comma separated)</label>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
+              Folder
+            </label>
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white"
+            >
+              {!folderId && <option value="">Select a folder</option>}
+              {folderId && !folders.some((f) => f._id === folderId) && (
+                <option value={folderId}>Current folder</option>
+              )}
+              {folders.map((f) => (
+                <option key={f._id} value={f._id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Moving a series video updates all parts in the same group.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
+              Authors (comma separated)
+            </label>
             <input
               type="text"
               required
@@ -155,7 +204,9 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Tags (comma separated)</label>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
+              Tags (comma separated)
+            </label>
             <input
               type="text"
               value={tags}
@@ -165,7 +216,9 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Azure Stream URL</label>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
+              Azure Stream URL
+            </label>
             <input
               type="url"
               required
@@ -192,7 +245,6 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
             </button>
           </div>
         </form>
-
       </div>
     </div>
   );

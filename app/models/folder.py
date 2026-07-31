@@ -10,8 +10,12 @@ class FolderResponse(BaseModel):
     name: str
     description: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
+    # Additive enrichment fields (optional for older documents / clients)
+    video_count: Optional[int] = None
+    last_updated: Optional[datetime] = None
 
 class FolderList(BaseModel):
     items: List[dict]

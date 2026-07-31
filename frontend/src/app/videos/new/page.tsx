@@ -3,30 +3,59 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createVideo, VideoCreate } from "@/src/lib/api";
+import { createVideo, VideoCreate, getFolderById, Folder } from "@/src/lib/api";
 
 function NewVideoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
-  const returnPage = searchParams.get("returnPage") || "1";
+
   const folderId = searchParams.get("folderId");
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingFolder, setIsCheckingFolder] = useState(true);
+  const [folder, setFolder] = useState<Folder | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // States for the form fields 
   const [title, setTitle] = useState("");
   const [authors, setAuthors] = useState("");
   const [tags, setTags] = useState("");
   const [streamUrl, setStreamUrl] = useState("");
-  
-  // New states for playlists
+
   const [groupId, setGroupId] = useState("");
   const [partNumber, setPartNumber] = useState("");
 
+  useEffect(() => {
+    const checkFolderStatus = async () => {
+      if (!folderId) {
+        setIsCheckingFolder(false);
+        return;
+      }
+      try {
+        const folderData = await getFolderById(folderId);
+        if (folderData.is_deleted) {
+          alert("Security Alert: Cannot add videos to an archived folder!");
+          router.push("/videos/archive");
+          return;
+        }
+        setFolder(folderData);
+        setIsCheckingFolder(false);
+      } catch (error) {
+        console.error("Folder not found", error);
+        alert("Error: Target folder does not exist.");
+        router.push("/");
+      }
+    };
+
+    checkFolderStatus();
+  }, [folderId, router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!folderId) {
+      setError("Videos must be created inside a folder. Open a folder and use Add Video.");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -38,7 +67,7 @@ function NewVideoContent() {
       authors: authorsArray,
       tags: tagsArray,
       azure_stream_url: streamUrl,
-      folder_id: folderId || "",
+      folder_id: folderId,
     };
 
     if (groupId.trim()) {
@@ -50,13 +79,8 @@ function NewVideoContent() {
 
     try {
       await createVideo(payload);
-
-      if (folderId) {
-        router.push(`/folders/${folderId}`);
-      } else {
-        router.push(`/?page=${returnPage}`);
-      }
-      router.refresh(); 
+      router.push(`/folders/${folderId}`);
+      router.refresh();
     } catch (err) {
       console.error(err);
       setError("An error occurred while saving the video.");
@@ -65,31 +89,59 @@ function NewVideoContent() {
     }
   };
 
+  if (isCheckingFolder) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500 font-medium">
+        Verifying folder...
+      </div>
+    );
+  }
+
+  if (!folderId || !folder) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center">
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">Choose a folder first</h1>
+        <p className="text-sm text-gray-500 mb-6 max-w-md">
+          Videos are created from inside a folder so the catalog stays organized. Open a folder
+          and use Add Video.
+        </p>
+        <Link
+          href="/"
+          className="px-5 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800"
+        >
+          Browse Folders
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 py-12">
       <main className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
-        
         <div className="mb-8">
-          <Link href={folderId ? `/folders/${folderId}` : `/?page=${returnPage}`} className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-4 inline-block">
-            &larr; Back to Folder
+          <Link
+            href={`/folders/${folderId}`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-4 inline-block transition-colors"
+          >
+            &larr; Back to {folder.name}
           </Link>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Add New Video
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Add New Video</h1>
           <p className="text-sm text-gray-500 mt-2">
-            Create a new catalog record for a lecture.
+            Creating in folder <span className="font-medium text-slate-700">{folder.name}</span>
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm"
+        >
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm font-medium">
               {error}
             </div>
           )}
 
           <div className="space-y-5">
-            {/* Title Field */}
             <div>
               <label htmlFor="title" className="block text-sm font-medium text-slate-700 mb-1">
                 Video Title <span className="text-red-500">*</span>
@@ -105,7 +157,6 @@ function NewVideoContent() {
               />
             </div>
 
-            {/* Stream URL Field */}
             <div>
               <label htmlFor="streamUrl" className="block text-sm font-medium text-slate-700 mb-1">
                 Azure Stream URL <span className="text-red-500">*</span>
@@ -121,7 +172,6 @@ function NewVideoContent() {
               />
             </div>
 
-            {/* Group ID & Part Number (Плейлисты) */}
             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
               <div>
                 <label htmlFor="groupId" className="block text-sm font-medium text-slate-700 mb-1">
@@ -153,7 +203,6 @@ function NewVideoContent() {
               </div>
             </div>
 
-            {/* Authors Field */}
             <div>
               <label htmlFor="authors" className="block text-sm font-medium text-slate-700 mb-1">
                 Authors
@@ -168,7 +217,6 @@ function NewVideoContent() {
               />
             </div>
 
-            {/* Tags Field */}
             <div>
               <label htmlFor="tags" className="block text-sm font-medium text-slate-700 mb-1">
                 Tags
@@ -185,8 +233,8 @@ function NewVideoContent() {
           </div>
 
           <div className="mt-8 flex justify-end gap-3 pt-5 border-t border-gray-100">
-            <Link 
-              href={folderId ? `/folders/${folderId}` : `/?page=${returnPage}`}
+            <Link
+              href={`/folders/${folderId}`}
               className="px-5 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Cancel
@@ -194,13 +242,12 @@ function NewVideoContent() {
             <button
               type="submit"
               disabled={isLoading}
-              className="px-5 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-70 disabled:cursor-not-allowed inline-flex items-center"
+              className="px-5 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-50"
             >
-              {isLoading ? "Saving..." : "Save Record"}
+              {isLoading ? "Saving..." : "Save Video"}
             </button>
           </div>
         </form>
-
       </main>
     </div>
   );
@@ -208,7 +255,7 @@ function NewVideoContent() {
 
 export default function NewVideoPage() {
   return (
-    <Suspense fallback={<div className="text-center py-20 text-gray-500">Loading form...</div>}>
+    <Suspense fallback={<div className="text-center py-20 text-gray-500">Loading...</div>}>
       <NewVideoContent />
     </Suspense>
   );

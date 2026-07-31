@@ -1,13 +1,17 @@
-from fastapi import APIRouter, Response, UploadFile, File, HTTPException
+from fastapi import APIRouter, Response, UploadFile, File
 import xml.etree.ElementTree as ET
 from app.database import videos_collection
+from app.backup import (
+    build_backup_payload,
+    restore_from_upload_bytes,
+)
 import json
-from bson import ObjectId
 
 router = APIRouter(
     prefix="/api/v1/export",
-    tags=["Export"]
+    tags=["Export"],
 )
+
 
 @router.get("/marcxml", response_class=Response)
 async def export_to_marcxml():
@@ -61,62 +65,33 @@ async def export_to_marcxml():
     return Response(
         content=xml_str,
         media_type="application/xml",
-        headers={"Content-Disposition": "attachment; filename=unime_catalog_marcxml.xml"}
+        headers={"Content-Disposition": "attachment; filename=unime_catalog_marcxml.xml"},
     )
 
 
 @router.get("/backup", response_class=Response)
 async def export_database_json():
-    """Download the entire database as a JSON backup file"""
-    videos = await videos_collection.find().to_list(10000)
+    """Download folders + videos as a versioned JSON backup file."""
+    payload = await build_backup_payload()
+    # Payload is already JSON-safe (ISO datetimes, string ObjectIds)
+    json_data = json.dumps(payload, ensure_ascii=False, indent=2)
 
-    # 2. Convert MongoDB ObjectId to string for JSON serialization
-    for video in videos:
-        video["_id"] = str(video["_id"])
-
-    # 3. Convert data to a formatted JSON string
-    json_data = json.dumps(videos, ensure_ascii=False, indent=2, default=str)
-
-    # 4. Return the file as a downloadable response
     return Response(
         content=json_data,
         media_type="application/json",
-        headers={"Content-Disposition": "attachment; filename=unime_db_backup.json"}
+        headers={"Content-Disposition": "attachment; filename=unime_db_backup.json"},
     )
 
 
+async def _restore_from_upload(file: UploadFile) -> dict:
+    content = await file.read()
+    return await restore_from_upload_bytes(content)
+
+
 @router.post("/restore")
-async def import_database_json(file: UploadFile = File(...)):
-    """Restore the database from a JSON backup file"""
-    try:
-        # 1. Read and parse the uploaded file
-        content = await file.read()
-        data = json.loads(content)
-
-        # 2. Check if the uploaded JSON is an array (list of videos)
-        if not isinstance(data, list):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid file format. Expected a JSON array (List)."
-            )
-
-        # 3. DANGER: Clear the current database before restoring
-        # (Assuming the backup contains the full complete state)
-        await videos_collection.delete_many({})
-
-        # 4. Convert string IDs back to MongoDB ObjectIds
-        for item in data:
-            if "_id" in item:
-                item["_id"] = ObjectId(item["_id"])
-
-        # 5. Insert the restored data into the database
-        if data:
-            await videos_collection.insert_many(data)
-
-        return {"message": f"Successfully restored {len(data)} videos!"}
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error during restore: {str(e)}"
-        )
+async def import_database_json_legacy(file: UploadFile = File(...)):
+    """
+    Legacy restore path (same behavior as POST /api/v1/import/backup).
+    Kept for backwards compatibility with older Tools clients.
+    """
+    return await _restore_from_upload(file)

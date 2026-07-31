@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 import json
 from bson import ObjectId
 from app.routers import folders
+from app.routers import search
+from app.routers import import_backup
 
 # Lifespan
 @asynccontextmanager
@@ -44,6 +46,8 @@ app.add_middleware(
 app.include_router(videos.router)
 app.include_router(export.router)
 app.include_router(folders.router)
+app.include_router(search.router)
+app.include_router(import_backup.router)
 
 @app.get("/")
 async def root():

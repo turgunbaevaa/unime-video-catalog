@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { getVideos, updateVideo, deleteVideo, getFolders, updateFolder, deleteFolder, Video, Folder } from "@/src/lib/api";
 
 interface PlaylistItem {
@@ -16,13 +16,11 @@ type DisplayItem = Video | PlaylistItem;
 
 function ArchiveContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   
   const currentPage = Number(searchParams.get("page")) || 1;
   const limit = 12;
 
   // --- STATES FOR VIDEOS ---
-  const [rawVideos, setRawVideos] = useState<Video[]>([]);
   const [displayItems, setDisplayItems] = useState<DisplayItem[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   
@@ -34,7 +32,7 @@ function ArchiveContent() {
   const [selectedFolderId, setSelectedFolderId] = useState<string>("");
 
   // Modals for Videos
-  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; videoId: string | null; }>({ isOpen: false, videoId: null });
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; videoIds: string[]; }>({ isOpen: false, videoIds: [] });
   const [restoreModal, setRestoreModal] = useState<{ isOpen: boolean; videoIds: string[]; }>({ isOpen: false, videoIds: [] });
 
   // Modals for Folders
@@ -92,10 +90,9 @@ function ArchiveContent() {
       setDeletedFolders(foldersData.items);
 
       const standaloneDeletedVideos = videosData.items.filter(
-        video => !foldersData.items.some(f => f._id === video.folder_id)
+        (video: Video) => !foldersData.items.some((f: Folder) => f._id === video.folder_id)
       );
       
-      setRawVideos(standaloneDeletedVideos);
       setDisplayItems(groupVideos(standaloneDeletedVideos));
       setTotalPages(Math.ceil(videosData.total_count / limit));
 
@@ -145,11 +142,11 @@ function ArchiveContent() {
   };
 
   const executePermanentDelete = async () => {
-    if (!deleteModal.videoId) return;
+    if (deleteModal.videoIds.length === 0) return;
     try {
-      await deleteVideo(deleteModal.videoId, true);
+      await Promise.all(deleteModal.videoIds.map(id => deleteVideo(id, true)));
       await fetchArchiveData();
-      setDeleteModal({ isOpen: false, videoId: null });
+      setDeleteModal({ isOpen: false, videoIds: [] });
     } catch (error) {
       console.error("Failed to delete video permanently:", error);
       alert("Error deleting video.");
@@ -174,8 +171,9 @@ function ArchiveContent() {
       await deleteFolder(folderDeleteModal.folderId, true);
       await fetchArchiveData();
       setFolderDeleteModal({ isOpen: false, folderId: null });
-    } catch (error: any) {
-      setFolderDeleteError(error.message || "Error deleting folder. Ensure it is empty.");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Error deleting folder. Ensure it is empty.";
+      setFolderDeleteError(message);
     }
   };
 
@@ -244,7 +242,7 @@ function ArchiveContent() {
                         <button onClick={() => executeRestoreFolder(folder._id)} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                           Restore
                         </button>
-                        <button onClick={() => setFolderDeleteModal({ isOpen: true, folderId: folder._id })} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm">
+                        <button onClick={() => setFolderDeleteModal({ isOpen: true, folderId: folder._id })} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-gray-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm">
                           Delete
                         </button>
                       </div>
@@ -262,9 +260,10 @@ function ArchiveContent() {
                   Archived Videos
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
-                  {displayItems.map((item, index) => {
+                  {displayItems.map((item) => {
                     if ('isPlaylist' in item) {
-                      const activeVideo = item.videos[item.activePartIndex];
+                      const safeIndex = Math.min(item.activePartIndex, Math.max(0, item.videos.length - 1));
+                      const activeVideo = item.videos[safeIndex];
                       return (
                         <div key={item.groupId} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col">
                           <div className="flex justify-between items-start mb-3">
@@ -281,7 +280,7 @@ function ArchiveContent() {
                           <div className="mb-4 flex-grow">
                             <div className="mb-3">
                               <span className="text-xs text-gray-400 font-medium uppercase tracking-wider block mb-1">Authors</span>
-                              <span className="text-sm text-slate-700 block line-clamp-1">{activeVideo.authors.join(', ')}</span>
+                              <span className="text-sm text-slate-700 block line-clamp-1">{activeVideo.authors?.join(', ')}</span>
                             </div>
                             {activeVideo.tags && activeVideo.tags.length > 0 && (
                               <div className="flex flex-wrap gap-1.5 mt-2">
@@ -302,8 +301,8 @@ function ArchiveContent() {
                               <button type="button" onClick={() => confirmRestore(item.videos.map(v => v._id))} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                                   Restore Entire Series
                               </button>
-                              <button type="button" onClick={() => setDeleteModal({ isOpen: true, videoId: activeVideo._id })} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm">
-                                Delete
+                              <button type="button" onClick={() => setDeleteModal({ isOpen: true, videoIds: item.videos.map(v => v._id) })} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-gray-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm">
+                                Delete Series
                               </button>
                             </div>
                           </div>
@@ -317,7 +316,7 @@ function ArchiveContent() {
                           <div className="mb-4 flex-grow">
                             <div className="mb-3">
                               <span className="text-xs text-gray-400 font-medium uppercase tracking-wider block mb-1">Authors</span>
-                              <span className="text-sm text-slate-700 block line-clamp-1" title={video.authors.join(', ')}>{video.authors.join(', ')}</span>
+                              <span className="text-sm text-slate-700 block line-clamp-1" title={video.authors?.join(', ')}>{video.authors?.join(', ')}</span>
                             </div>
                             {video.tags && video.tags.length > 0 && (
                               <div className="flex flex-wrap gap-1.5 mt-2">
@@ -336,7 +335,7 @@ function ArchiveContent() {
                               <button type="button" onClick={() => confirmRestore([video._id])} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                                   Restore
                               </button>
-                              <button type="button" onClick={() => setDeleteModal({ isOpen: true, videoId: video._id })} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm">Delete</button>
+                              <button type="button" onClick={() => setDeleteModal({ isOpen: true, videoIds: [video._id] })} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-gray-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm">Delete</button>
                             </div>
                           </div>
                         </div>
@@ -373,9 +372,9 @@ function ArchiveContent() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 className="text-xl font-semibold text-gray-900 mb-2">Are you sure?</h3>
-            <p className="text-gray-500 mb-6">This will permanently delete the video. This action cannot be undone.</p>
+            <p className="text-gray-500 mb-6">This will permanently delete the selected item(s). This action cannot be undone.</p>
             <div className="flex justify-end gap-3">
-              <button onClick={() => setDeleteModal({ isOpen: false, videoId: null })} className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">Cancel</button>
+              <button onClick={() => setDeleteModal({ isOpen: false, videoIds: [] })} className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">Cancel</button>
               <button onClick={executePermanentDelete} className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors">Delete</button>
             </div>
           </div>
