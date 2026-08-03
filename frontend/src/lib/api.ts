@@ -119,6 +119,147 @@ export async function createVideo(data: VideoCreate): Promise<Video> {
   return res.json();
 }
 
+export interface VideoBulkCreateInput {
+  folder_id: string;
+  urls: string[];
+  authors?: string[];
+  tags?: string[];
+  language?: string;
+  publisher?: string;
+  copyright?: string;
+  description?: string;
+  date_recorded?: string;
+  perform_ai_processing?: boolean;
+}
+
+export interface VideoBulkItemResult {
+  url: string;
+  status:
+    | "created"
+    | "duplicate_in_batch"
+    | "duplicate_existing"
+    | "invalid"
+    | "failed"
+    | "empty";
+  video_id?: string | null;
+  title?: string | null;
+  message?: string | null;
+}
+
+export interface VideoBulkSummary {
+  created: number;
+  skipped_duplicates: number;
+  invalid_urls: number;
+  failed: number;
+  total: number;
+}
+
+export interface VideoBulkResponse {
+  summary: VideoBulkSummary;
+  results: VideoBulkItemResult[];
+}
+
+export async function bulkCreateVideos(
+  data: VideoBulkCreateInput,
+  signal?: AbortSignal
+): Promise<VideoBulkResponse> {
+  const res = await fetch(`${API_BASE}/videos/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    signal,
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({} as { detail?: string }));
+    throw new Error(
+      typeof payload.detail === "string" ? payload.detail : "Bulk upload failed"
+    );
+  }
+  return res.json();
+}
+
+/**
+ * Processes URLs one-by-one via the bulk endpoint so the UI can show progress
+ * and cancel between items. Client pre-marks empty lines and in-batch duplicates.
+ */
+export async function bulkCreateVideosWithProgress(
+  data: VideoBulkCreateInput,
+  options?: {
+    signal?: AbortSignal;
+    onProgress?: (info: {
+      current: number;
+      total: number;
+      url: string;
+    }) => void;
+  }
+): Promise<VideoBulkResponse> {
+  const rawUrls = data.urls;
+  const results: VideoBulkItemResult[] = [];
+  const summary: VideoBulkSummary = {
+    created: 0,
+    skipped_duplicates: 0,
+    invalid_urls: 0,
+    failed: 0,
+    total: rawUrls.length,
+  };
+
+  const seen = new Set<string>();
+  const toCreate: { index: number; url: string }[] = [];
+
+  rawUrls.forEach((raw, index) => {
+    const url = (raw || "").trim();
+    if (!url) {
+      summary.invalid_urls += 1;
+      results[index] = {
+        url: "",
+        status: "empty",
+        message: "Empty line skipped",
+      };
+      return;
+    }
+    if (seen.has(url)) {
+      summary.skipped_duplicates += 1;
+      results[index] = {
+        url,
+        status: "duplicate_in_batch",
+        message: "Duplicate URL in this upload batch",
+      };
+      return;
+    }
+    seen.add(url);
+    toCreate.push({ index, url });
+  });
+
+  let processedCreates = 0;
+  for (const item of toCreate) {
+    if (options?.signal?.aborted) {
+      throw new DOMException("Bulk upload cancelled", "AbortError");
+    }
+    options?.onProgress?.({
+      current: processedCreates + 1,
+      total: toCreate.length,
+      url: item.url,
+    });
+
+    const partial = await bulkCreateVideos(
+      { ...data, urls: [item.url] },
+      options?.signal
+    );
+    const row = partial.results[0];
+    results[item.index] = row;
+    summary.created += partial.summary.created;
+    summary.skipped_duplicates += partial.summary.skipped_duplicates;
+    summary.invalid_urls += partial.summary.invalid_urls;
+    summary.failed += partial.summary.failed;
+    processedCreates += 1;
+  }
+
+  return {
+    summary,
+    results: results.filter(Boolean),
+  };
+}
+
 export async function updateVideo(id: string, data: VideoUpdateInput): Promise<Video> {
   const res = await fetch(`${API_BASE}/videos/${id}`, {
     method: "PATCH",

@@ -71,3 +71,38 @@ class PaginatedVideoList(BaseModel):
     total_count: int
     page: int
     limit: int
+
+
+class VideoBulkCreate(BaseModel):
+    """Shared metadata + many Azure URLs for one folder."""
+    folder_id: str = Field(..., description="Target folder ObjectId")
+    urls: List[str] = Field(..., min_length=1, description="Azure / Stream URLs (one per entry)")
+    authors: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    language: Optional[str] = None
+    publisher: Optional[str] = None
+    copyright: Optional[str] = None
+    description: Optional[str] = None
+    date_recorded: Optional[datetime] = None
+    perform_ai_processing: bool = True
+
+
+class VideoBulkItemResult(BaseModel):
+    url: str
+    status: str  # created | duplicate_in_batch | duplicate_existing | invalid | failed | empty
+    video_id: Optional[str] = None
+    title: Optional[str] = None
+    message: Optional[str] = None
+
+
+class VideoBulkSummary(BaseModel):
+    created: int = 0
+    skipped_duplicates: int = 0
+    invalid_urls: int = 0
+    failed: int = 0
+    total: int = 0
+
+
+class VideoBulkResponse(BaseModel):
+    summary: VideoBulkSummary
+    results: List[VideoBulkItemResult]

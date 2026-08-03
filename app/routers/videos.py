@@ -1,10 +1,20 @@
 from fastapi import APIRouter, HTTPException, status, Query, Request, Depends
-from typing import Optional
-from app.models.video import VideoCreate, VideoResponse, VideoUpdate, PaginatedVideoList
+from typing import Optional, Any, List
+from app.models.video import (
+    VideoCreate,
+    VideoResponse,
+    VideoUpdate,
+    PaginatedVideoList,
+    VideoBulkCreate,
+    VideoBulkResponse,
+    VideoBulkItemResult,
+    VideoBulkSummary,
+)
 from app.database import videos_collection, folders_collection
 from bson import ObjectId
 from bson.errors import InvalidId
 from datetime import datetime
+from urllib.parse import urlparse, unquote
 import re
 
 router = APIRouter(
@@ -18,6 +28,8 @@ ALLOWED_VIDEO_SORTS = {
     "title_asc": {"title": 1},
     "title_desc": {"title": -1},
 }
+
+MAX_BULK_URLS = 200
 
 
 def _to_object_id(video_id: str) -> ObjectId:
@@ -41,6 +53,145 @@ async def _touch_folder(folder_id: Optional[str]) -> None:
         pass
 
 
+_MEDIA_EXTENSIONS = {
+    "mp4", "mov", "mkv", "avi", "wmv", "webm", "m4v", "mpg", "mpeg",
+    "mp3", "wav", "m4a", "aac", "flac", "m3u8", "ts",
+}
+
+_TITLE_ACRONYMS = {
+    "ai", "ml", "nlp", "api", "gpu", "cpu", "ui", "ux", "sql", "db", "iot", "vr", "ar", "os",
+}
+
+
+def _is_opaque_filename(name: str) -> bool:
+    """True when the basename looks like a GUID/UUID/hash with no words."""
+    cleaned = re.sub(r"[\s\-_]", "", name)
+    if len(cleaned) < 16:
+        return False
+    return bool(re.fullmatch(r"[0-9a-fA-F]+", cleaned))
+
+
+def _humanize_filename_title(name: str) -> str:
+    """
+    Turn a file basename into a clean catalog title.
+    lecture_01 / introduction-to-ai → Lecture 01 / Introduction To AI
+    """
+    name = re.sub(r"[-_]+", " ", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    if not name:
+        return "Untitled video"
+
+    if _is_opaque_filename(name):
+        return "Untitled video"
+
+    words: List[str] = []
+    for raw in name.split(" "):
+        if not raw:
+            continue
+        if raw.isdigit():
+            words.append(raw)
+            continue
+        lower = raw.lower()
+        if lower in _TITLE_ACRONYMS:
+            words.append(lower.upper())
+        else:
+            words.append(lower[:1].upper() + lower[1:])
+
+    title = " ".join(words).strip()
+    if len(title) < 3:
+        return f"Video {title}".strip() if title else "Untitled video"
+    return title[:200]
+
+
+def _title_from_url(url: str) -> str:
+    """Derive a human-readable title from the URL path filename when no other metadata exists."""
+    parsed = urlparse(url)
+    path = unquote(parsed.path or "").rstrip("/")
+    name = path.split("/")[-1] if path else ""
+
+    # Strip only known media extensions (.mp4, .mov, …)
+    if "." in name and not name.startswith("."):
+        base, ext = name.rsplit(".", 1)
+        if ext.lower() in _MEDIA_EXTENSIONS:
+            name = base
+
+    if not name:
+        return "Untitled video"
+
+    return _humanize_filename_title(name)
+
+
+def _normalize_url(raw: str) -> str:
+    return raw.strip()
+
+
+def _validate_stream_url(url: str) -> Optional[str]:
+    """Return an error message if invalid, else None."""
+    if not url:
+        return "Empty URL"
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return "Malformed URL"
+    if parsed.scheme not in ("http", "https"):
+        return "URL must start with http:// or https://"
+    if not parsed.netloc or " " in url.strip():
+        return "Malformed URL"
+    return None
+
+
+async def insert_video_record(
+    *,
+    title: str,
+    authors: List[str],
+    tags: List[str],
+    azure_stream_url: str,
+    folder_id: str,
+    date_recorded: Optional[datetime] = None,
+    group_id: Optional[str] = None,
+    part_number: Optional[int] = None,
+    perform_ai_processing: bool = True,
+    language: Optional[str] = None,
+    publisher: Optional[str] = None,
+    copyright: Optional[str] = None,
+    description: Optional[str] = None,
+) -> dict:
+    """Shared insert used by single create and bulk upload."""
+    video_dict: dict[str, Any] = {
+        "title": title,
+        "authors": authors,
+        "tags": tags or [],
+        "azure_stream_url": str(azure_stream_url),
+        "folder_id": folder_id,
+        "date_recorded": date_recorded or datetime.utcnow(),
+        "created_at": datetime.utcnow(),
+        "ai_processing": {
+            "status": "pending" if perform_ai_processing else "skipped",
+            "transcript_segments": [],
+            "language": language,
+        },
+        "opac_export": {"is_exported": False},
+        "is_deleted": False,
+    }
+    if group_id:
+        video_dict["group_id"] = group_id
+    if part_number is not None:
+        video_dict["part_number"] = part_number
+    if publisher:
+        video_dict["publisher"] = publisher
+    if copyright:
+        video_dict["copyright"] = copyright
+    if description:
+        video_dict["description"] = description
+
+    new_video = await videos_collection.insert_one(video_dict)
+    await _touch_folder(folder_id)
+
+    created_video = await videos_collection.find_one({"_id": new_video.inserted_id})
+    created_video["_id"] = str(created_video["_id"])
+    return created_video
+
+
 # Administrator Verification Placeholder
 async def verify_admin(request: Request):
     # auth_header = request.headers.get("Authorization")
@@ -53,24 +204,138 @@ async def verify_admin(request: Request):
              dependencies=[Depends(verify_admin)])
 async def create_video(video: VideoCreate):
     video_dict = video.model_dump()
+    return await insert_video_record(
+        title=video_dict["title"],
+        authors=video_dict.get("authors") or [],
+        tags=video_dict.get("tags") or [],
+        azure_stream_url=str(video_dict["azure_stream_url"]),
+        folder_id=video_dict["folder_id"],
+        date_recorded=video_dict.get("date_recorded"),
+        group_id=video_dict.get("group_id"),
+        part_number=video_dict.get("part_number"),
+        perform_ai_processing=True,
+    )
 
-    video_dict["azure_stream_url"] = str(video_dict["azure_stream_url"])
 
-    video_dict["created_at"] = datetime.utcnow()
-    video_dict["ai_processing"] = {"status": "pending", "transcript_segments": []}
-    video_dict["opac_export"] = {"is_exported": False}
-    video_dict["is_deleted"] = False
+@router.post(
+    "/bulk",
+    response_model=VideoBulkResponse,
+    dependencies=[Depends(verify_admin)],
+)
+async def bulk_create_videos(payload: VideoBulkCreate):
+    """
+    Create many videos from Azure URLs with shared metadata.
+    Invalid / duplicate entries are skipped; valid entries are still created.
+    """
+    folder_id = payload.folder_id.strip()
+    try:
+        folder_oid = ObjectId(folder_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid folder_id") from exc
 
-    # Save in MongoDB
-    new_video = await videos_collection.insert_one(video_dict)
+    folder = await folders_collection.find_one({"_id": folder_oid})
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    if folder.get("is_deleted"):
+        raise HTTPException(status_code=400, detail="Cannot add videos to an archived folder")
 
-    await _touch_folder(video_dict.get("folder_id"))
+    if len(payload.urls) > MAX_BULK_URLS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many URLs: maximum is {MAX_BULK_URLS} per request",
+        )
 
-    # Get saved video from db
-    created_video = await videos_collection.find_one({"_id": new_video.inserted_id})
-    created_video["_id"] = str(created_video["_id"])
+    authors = [a.strip() for a in (payload.authors or []) if a and str(a).strip()]
+    tags = [t.strip() for t in (payload.tags or []) if t and str(t).strip()]
 
-    return created_video
+    summary = VideoBulkSummary(total=len(payload.urls))
+    results: List[VideoBulkItemResult] = []
+    seen_in_batch: set[str] = set()
+
+    for raw in payload.urls:
+        url = _normalize_url(raw if isinstance(raw, str) else str(raw))
+
+        if not url:
+            summary.invalid_urls += 1
+            results.append(
+                VideoBulkItemResult(
+                    url="",
+                    status="empty",
+                    message="Empty line skipped",
+                )
+            )
+            continue
+
+        url_error = _validate_stream_url(url)
+        if url_error:
+            summary.invalid_urls += 1
+            results.append(
+                VideoBulkItemResult(url=url, status="invalid", message=url_error)
+            )
+            continue
+
+        if url in seen_in_batch:
+            summary.skipped_duplicates += 1
+            results.append(
+                VideoBulkItemResult(
+                    url=url,
+                    status="duplicate_in_batch",
+                    message="Duplicate URL in this upload batch",
+                )
+            )
+            continue
+        seen_in_batch.add(url)
+
+        existing = await videos_collection.find_one({"azure_stream_url": url})
+        if existing:
+            summary.skipped_duplicates += 1
+            results.append(
+                VideoBulkItemResult(
+                    url=url,
+                    status="duplicate_existing",
+                    video_id=str(existing["_id"]),
+                    title=existing.get("title"),
+                    message="Video with this URL already exists",
+                )
+            )
+            continue
+
+        title = _title_from_url(url)
+        try:
+            created = await insert_video_record(
+                title=title,
+                authors=authors,
+                tags=tags,
+                azure_stream_url=url,
+                folder_id=folder_id,
+                date_recorded=payload.date_recorded,
+                perform_ai_processing=payload.perform_ai_processing,
+                language=payload.language,
+                publisher=payload.publisher,
+                copyright=payload.copyright,
+                description=payload.description,
+            )
+            summary.created += 1
+            results.append(
+                VideoBulkItemResult(
+                    url=url,
+                    status="created",
+                    video_id=created["_id"],
+                    title=created.get("title"),
+                    message="Created",
+                )
+            )
+        except Exception as exc:
+            summary.failed += 1
+            results.append(
+                VideoBulkItemResult(
+                    url=url,
+                    status="failed",
+                    message=str(exc),
+                )
+            )
+
+    return VideoBulkResponse(summary=summary, results=results)
 
 
 @router.get("/", response_model=PaginatedVideoList)
