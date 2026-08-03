@@ -10,6 +10,7 @@ import {
   Folder,
   VideoUpdateInput,
 } from "@/src/lib/api";
+import { handleClientError, showSuccess } from "@/src/lib/notify";
 
 export default function EditVideoPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -18,7 +19,6 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [authors, setAuthors] = useState("");
@@ -26,6 +26,8 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
   const [streamUrl, setStreamUrl] = useState("");
   const [folderId, setFolderId] = useState("");
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [conferenceName, setConferenceName] = useState("");
+  const [conferencePart, setConferencePart] = useState("");
 
   const [initialData, setInitialData] = useState<Video | null>(null);
 
@@ -43,9 +45,13 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
         setTags(video.tags ? video.tags.join(", ") : "");
         setStreamUrl(video.azure_stream_url || "");
         setFolderId(video.folder_id || "");
+        setConferenceName(video.conference_group || "");
+        setConferencePart(
+          video.conference_part != null ? String(video.conference_part) : ""
+        );
         setFolders(foldersData.items);
-      } catch {
-        setError("Failed to load video details");
+      } catch (error) {
+        handleClientError(error, "This video could not be loaded.");
       } finally {
         setIsLoading(false);
       }
@@ -59,7 +65,6 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
     if (!initialData) return;
 
     setIsSaving(true);
-    setError(null);
 
     try {
       const updatedFields: VideoUpdateInput = {};
@@ -86,6 +91,26 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
         updatedFields.folder_id = folderId;
       }
 
+      const trimmedConference = conferenceName.trim();
+      const initialGroup = initialData.conference_group?.trim() || "";
+      if (trimmedConference !== initialGroup) {
+        updatedFields.conference_group = trimmedConference || null;
+        if (!trimmedConference) {
+          updatedFields.conference_part = null;
+        }
+      }
+
+      if (trimmedConference) {
+        const partNum = conferencePart.trim()
+          ? parseInt(conferencePart, 10)
+          : null;
+        const initialPart = initialData.conference_part ?? null;
+        const newPart = partNum !== null && !Number.isNaN(partNum) ? partNum : null;
+        if (newPart !== initialPart) {
+          updatedFields.conference_part = newPart;
+        }
+      }
+
       const targetFolder = folderId || initialData.folder_id;
 
       if (Object.keys(updatedFields).length === 0) {
@@ -94,9 +119,10 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
       }
 
       await updateVideo(videoId, updatedFields);
+      showSuccess("Video updated.");
       router.push(targetFolder ? `/folders/${targetFolder}` : "/");
-    } catch {
-      setError("Failed to update video. Check input data.");
+    } catch (error) {
+      handleClientError(error, "This video could not be updated.");
       setIsSaving(false);
     }
   };
@@ -145,12 +171,6 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
           </button>
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100">
-            {error}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
@@ -186,8 +206,35 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
               ))}
             </select>
             <p className="text-xs text-gray-400 mt-1">
-              Moving a series video updates all parts in the same group.
+              Only this video moves to the selected folder.
             </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
+              Conference name (optional)
+            </label>
+            <input
+              type="text"
+              value={conferenceName}
+              onChange={(e) => setConferenceName(e.target.value)}
+              placeholder="e.g. Storia Romana 2026"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">
+              Part number (optional)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={conferencePart}
+              onChange={(e) => setConferencePart(e.target.value)}
+              placeholder="e.g. 1"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+            />
           </div>
 
           <div>

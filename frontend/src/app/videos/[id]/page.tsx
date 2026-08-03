@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getVideo, Video } from "@/src/lib/api";
+import { handleClientError } from "@/src/lib/notify";
 
 export default function VideoDetailPage() {
   const params = useParams();
@@ -19,7 +20,7 @@ export default function VideoDetailPage() {
           setVideo(data);
         }
       } catch (error) {
-        console.error("Failed to fetch video:", error);
+        handleClientError(error, "This video could not be loaded.");
       } finally {
         setIsLoading(false);
       }
@@ -106,7 +107,7 @@ export default function VideoDetailPage() {
             <div className="space-y-4">
               <div>
                 <span className="text-xs text-gray-400 font-medium uppercase tracking-wider block mb-1">Authors</span>
-                <p className="text-sm text-slate-800">{video.authors.join(", ")}</p>
+                <p className="text-sm text-slate-800">{(video.authors ?? []).join(", ")}</p>
               </div>
 
               {video.tags && video.tags.length > 0 && (

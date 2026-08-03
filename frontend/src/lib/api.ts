@@ -26,8 +26,8 @@ export interface Video {
   tags: string[];
   azure_stream_url: string;
   folder_id: string;
-  group_id?: string | null;
-  part_number?: number | null;
+  conference_group?: string | null;
+  conference_part?: number | null;
   date_recorded?: string;
   created_at?: string;
   uploaded_by?: string | null;
@@ -50,8 +50,8 @@ export interface VideoCreate {
   tags: string[];
   azure_stream_url: string;
   folder_id: string;
-  group_id?: string;
-  part_number?: number;
+  conference_group?: string;
+  conference_part?: number;
 }
 
 export interface VideoUpdateInput {
@@ -61,8 +61,8 @@ export interface VideoUpdateInput {
   tags?: string[];
   azure_stream_url?: string;
   folder_id?: string;
-  group_id?: string;
-  part_number?: number;
+  conference_group?: string | null;
+  conference_part?: number | null;
   is_deleted?: boolean;
 }
 
@@ -77,6 +77,23 @@ export function normalizeApiBase(raw?: string): string {
 }
 
 export const API_BASE = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
+
+export {
+  ApiError,
+  apiFetch,
+  formatApiErrorDetail,
+  isAbortError,
+  isApiError,
+  isExpectedError,
+  throwIfNotOk,
+} from "@/src/lib/apiError";
+
+import {
+  ApiError,
+  apiFetch,
+  formatApiErrorDetail,
+  throwIfNotOk,
+} from "@/src/lib/apiError";
 
 // --- VIDEOS API ---
 
@@ -98,24 +115,24 @@ export async function getVideos(
   if (searchQ) url += `&q=${encodeURIComponent(searchQ)}`;
   if (sort) url += `&sort=${encodeURIComponent(sort)}`;
 
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to fetch videos");
+  const res = await apiFetch(url, { cache: "no-store" });
+  await throwIfNotOk(res, "The video list could not be loaded.");
   return res.json();
 }
 
 export async function getVideo(id: string): Promise<Video> {
-  const res = await fetch(`${API_BASE}/videos/${id}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to fetch video");
+  const res = await apiFetch(`${API_BASE}/videos/${id}`, { cache: "no-store" });
+  await throwIfNotOk(res, "This video could not be loaded.");
   return res.json();
 }
 
 export async function createVideo(data: VideoCreate): Promise<Video> {
-  const res = await fetch(`${API_BASE}/videos/`, {
+  const res = await apiFetch(`${API_BASE}/videos/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to create video");
+  await throwIfNotOk(res, "This video could not be created.");
   return res.json();
 }
 
@@ -163,18 +180,13 @@ export async function bulkCreateVideos(
   data: VideoBulkCreateInput,
   signal?: AbortSignal
 ): Promise<VideoBulkResponse> {
-  const res = await fetch(`${API_BASE}/videos/bulk`, {
+  const res = await apiFetch(`${API_BASE}/videos/bulk`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
     signal,
   });
-  if (!res.ok) {
-    const payload = await res.json().catch(() => ({} as { detail?: string }));
-    throw new Error(
-      typeof payload.detail === "string" ? payload.detail : "Bulk upload failed"
-    );
-  }
+  await throwIfNotOk(res, "The bulk upload could not be completed.");
   return res.json();
 }
 
@@ -261,16 +273,13 @@ export async function bulkCreateVideosWithProgress(
 }
 
 export async function updateVideo(id: string, data: VideoUpdateInput): Promise<Video> {
-  const res = await fetch(`${API_BASE}/videos/${id}`, {
+  const res = await apiFetch(`${API_BASE}/videos/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
 
-  if (!res.ok) {
-    throw new Error("Failed to update video");
-  }
-
+  await throwIfNotOk(res, "This video could not be updated.");
   return res.json();
 }
 
@@ -279,8 +288,13 @@ export async function deleteVideo(id: string, permanent = false): Promise<void> 
     ? `${API_BASE}/videos/${id}/permanent`
     : `${API_BASE}/videos/${id}`;
 
-  const res = await fetch(url, { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to delete video");
+  const res = await apiFetch(url, { method: "DELETE" });
+  await throwIfNotOk(
+    res,
+    permanent
+      ? "This video could not be permanently deleted."
+      : "This video could not be archived."
+  );
 }
 
 // --- FOLDERS API ---
@@ -317,15 +331,6 @@ export interface SearchResponse {
   limit: number;
 }
 
-export function isAbortError(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "name" in err &&
-    (err as { name: string }).name === "AbortError"
-  );
-}
-
 function emptySearchResponse(page: number, limit: number): SearchResponse {
   return {
     folders: [],
@@ -357,8 +362,8 @@ export async function searchCatalog(
     `${API_BASE}/search/?q=${encodeURIComponent(trimmed)}` +
     `&page=${safePage}&limit=${safeLimit}`;
 
-  const res = await fetch(url, { cache: "no-store", signal });
-  if (!res.ok) throw new Error("Failed to search catalog");
+  const res = await apiFetch(url, { cache: "no-store", signal });
+  await throwIfNotOk(res, "Search results could not be loaded. Please try again.");
   return res.json();
 }
 
@@ -367,15 +372,13 @@ export async function getFolders(
   limit: number = 15,
   onlyDeleted: boolean = false
 ): Promise<FolderListResponse> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_BASE}/folders/?page=${page}&limit=${limit}&only_deleted=${onlyDeleted}`,
     {
       cache: "no-store",
     }
   );
-  if (!res.ok) {
-    throw new Error("Failed to fetch folders");
-  }
+  await throwIfNotOk(res, "The folder list could not be loaded.");
   return res.json();
 }
 
@@ -383,24 +386,20 @@ export async function createFolder(data: {
   name: string;
   description?: string;
 }): Promise<Folder> {
-  const res = await fetch(`${API_BASE}/folders/`, {
+  const res = await apiFetch(`${API_BASE}/folders/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) {
-    throw new Error("Failed to create folder");
-  }
+  await throwIfNotOk(res, "This folder could not be created.");
   return res.json();
 }
 
 export async function getFolderById(id: string): Promise<Folder> {
-  const res = await fetch(`${API_BASE}/folders/${id}`, {
+  const res = await apiFetch(`${API_BASE}/folders/${id}`, {
     cache: "no-store",
   });
-  if (!res.ok) {
-    throw new Error("Failed to fetch folder details");
-  }
+  await throwIfNotOk(res, "This folder could not be loaded.");
   return res.json();
 }
 
@@ -409,12 +408,13 @@ export async function deleteFolder(id: string, permanent = false): Promise<void>
     ? `${API_BASE}/folders/${id}/permanent`
     : `${API_BASE}/folders/${id}`;
 
-  const res = await fetch(url, { method: "DELETE" });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({} as { detail?: string }));
-    throw new Error(errorData.detail || "Failed to delete folder");
-  }
+  const res = await apiFetch(url, { method: "DELETE" });
+  await throwIfNotOk(
+    res,
+    permanent
+      ? "This folder could not be permanently deleted."
+      : "This folder could not be archived."
+  );
 }
 
 // Restoring / editing a Folder
@@ -422,12 +422,12 @@ export async function updateFolder(
   id: string,
   data: { is_deleted?: boolean; name?: string; description?: string }
 ): Promise<Folder> {
-  const res = await fetch(`${API_BASE}/folders/${id}`, {
+  const res = await apiFetch(`${API_BASE}/folders/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to update folder");
+  await throwIfNotOk(res, "This folder could not be updated.");
   return res.json();
 }
 
@@ -439,28 +439,9 @@ export interface RestoreBackupResult {
   videos_restored: number;
 }
 
-function formatApiErrorDetail(detail: unknown, fallback: string): string {
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail
-      .map((item) =>
-        typeof item === "object" && item && "msg" in item
-          ? String((item as { msg: unknown }).msg)
-          : JSON.stringify(item)
-      )
-      .join("; ");
-  }
-  if (detail && typeof detail === "object") {
-    return JSON.stringify(detail);
-  }
-  return fallback;
-}
-
 export async function downloadDatabaseBackup(): Promise<void> {
-  const res = await fetch(`${API_BASE}/export/backup`, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error("Failed to export database backup");
-  }
+  const res = await apiFetch(`${API_BASE}/export/backup`, { cache: "no-store" });
+  await throwIfNotOk(res, "The database backup could not be downloaded.");
 
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -488,11 +469,17 @@ export function restoreDatabaseBackup(
     };
 
     xhr.onload = () => {
-      let payload: { message?: string; detail?: unknown; folders_restored?: number; videos_restored?: number } = {};
+      let payload: {
+        message?: string;
+        detail?: unknown;
+        folders_restored?: number;
+        videos_restored?: number;
+      } = {};
+      let parseFailed = false;
       try {
         payload = JSON.parse(xhr.responseText || "{}");
       } catch {
-        // ignore parse errors; fall back to status text
+        parseFailed = true;
       }
 
       if (xhr.status >= 200 && xhr.status < 300) {
@@ -504,15 +491,38 @@ export function restoreDatabaseBackup(
         return;
       }
 
+      if (parseFailed && !xhr.responseText) {
+        reject(
+          new ApiError(
+            "The database could not be restored from this backup file.",
+            { status: xhr.status || 0, expected: false }
+          )
+        );
+        return;
+      }
+
       reject(
-        new Error(
-          formatApiErrorDetail(payload.detail, "Failed to restore database backup")
+        new ApiError(
+          formatApiErrorDetail(
+            payload.detail,
+            "The database could not be restored from this backup file."
+          ),
+          {
+            status: xhr.status,
+            detail: payload.detail,
+            expected: xhr.status >= 400 && xhr.status < 500,
+          }
         )
       );
     };
 
     xhr.onerror = () => {
-      reject(new Error("Network error while restoring database backup"));
+      reject(
+        new ApiError(
+          "A network error occurred while restoring the database backup.",
+          { status: 0, expected: false }
+        )
+      );
     };
 
     const formData = new FormData();

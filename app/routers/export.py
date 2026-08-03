@@ -15,8 +15,10 @@ router = APIRouter(
 
 @router.get("/marcxml", response_class=Response)
 async def export_to_marcxml():
-    # 1. Get all the videos from db
-    videos = await videos_collection.find().to_list(1000)
+    # Active (non-deleted) videos only — archived records stay out of OPAC export
+    videos = await videos_collection.find(
+        {"is_deleted": {"$ne": True}}
+    ).to_list(1000)
 
     # 2. Creating root element of the XML-doc
     collection = ET.Element("collection", xmlns="http://www.loc.gov/MARC21/slim")

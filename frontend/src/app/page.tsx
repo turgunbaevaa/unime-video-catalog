@@ -10,6 +10,7 @@ import {
   deleteFolder,
   Folder,
 } from "@/src/lib/api";
+import { handleClientError, showSuccess } from "@/src/lib/notify";
 import { useSession } from "next-auth/react";
 
 function formatFolderDate(value?: string | null): string | null {
@@ -35,7 +36,6 @@ function HomeContent() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const [isAddFolderModalOpen, setIsAddFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -57,8 +57,7 @@ function HomeContent() {
       setFolders(data.items);
       setTotalPages(Math.ceil(data.total_count / limit) || 1);
     } catch (error) {
-      console.error("Error loading folders:", error);
-      setActionError("Failed to load folders.");
+      handleClientError(error, "The folder list could not be loaded.");
     } finally {
       setIsLoading(false);
     }
@@ -74,15 +73,14 @@ function HomeContent() {
 
     try {
       setIsCreating(true);
-      setActionError(null);
       await createFolder({ name: newFolderName, description: newFolderDesc });
       setIsAddFolderModalOpen(false);
       setNewFolderName("");
       setNewFolderDesc("");
+      showSuccess("Folder created.");
       fetchFolders();
     } catch (error) {
-      console.error("Failed to create folder:", error);
-      setActionError("Error creating folder.");
+      handleClientError(error, "This folder could not be created.");
     } finally {
       setIsCreating(false);
     }
@@ -94,7 +92,6 @@ function HomeContent() {
     setEditFolder(folder);
     setEditName(folder.name);
     setEditDesc(folder.description || "");
-    setActionError(null);
   };
 
   const handleEditFolder = async (e: React.FormEvent) => {
@@ -103,16 +100,15 @@ function HomeContent() {
 
     try {
       setIsSavingEdit(true);
-      setActionError(null);
       await updateFolder(editFolder._id, {
         name: editName.trim(),
         description: editDesc,
       });
       setEditFolder(null);
+      showSuccess("Folder updated.");
       fetchFolders();
     } catch (error) {
-      console.error("Failed to update folder:", error);
-      setActionError("Error updating folder.");
+      handleClientError(error, "This folder could not be updated.");
     } finally {
       setIsSavingEdit(false);
     }
@@ -122,22 +118,18 @@ function HomeContent() {
     e.preventDefault();
     e.stopPropagation();
     setDeleteTarget(folder);
-    setActionError(null);
   };
 
   const handleDeleteFolder = async () => {
     if (!deleteTarget) return;
     try {
       setIsDeleting(true);
-      setActionError(null);
       await deleteFolder(deleteTarget._id, false);
       setDeleteTarget(null);
+      showSuccess("Folder archived.");
       fetchFolders();
     } catch (error) {
-      console.error("Failed to archive folder:", error);
-      setActionError(
-        error instanceof Error ? error.message : "Error archiving folder."
-      );
+      handleClientError(error, "This folder could not be archived.");
     } finally {
       setIsDeleting(false);
     }
@@ -179,12 +171,6 @@ function HomeContent() {
             </button>
           )}
         </div>
-
-        {actionError && (
-          <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-            {actionError}
-          </div>
-        )}
 
         {isLoading ? (
           <div className="text-center py-20 text-gray-500">Loading folders...</div>

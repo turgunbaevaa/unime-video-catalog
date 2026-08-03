@@ -3,6 +3,11 @@ Full-catalog JSON backup / restore helpers.
 
 Safe restore uses staging + live snapshot collections so validation failures
 never wipe the live DB, and mid-restore failures can roll back.
+
+Backup versions:
+  - v1: folders + videos (current export)
+  - v2: accepted on import for older files; only folders + videos are restored
+Legacy plain video arrays remain supported.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from app.database import database, folders_collection, videos_collection
 
 BACKUP_FORMAT = "unime-video-catalog-backup"
 BACKUP_VERSION = 1
+SUPPORTED_BACKUP_VERSIONS = {1, 2}
 
 STAGING_FOLDERS = "_backup_staging_folders"
 STAGING_VIDEOS = "_backup_staging_videos"
@@ -173,7 +179,7 @@ def parse_and_validate_backup(data: Any) -> tuple[list[dict], list[dict]]:
     """
     Validate backup JSON and return (folders, videos) with ObjectId _id values.
     Supports:
-      - versioned envelope (preferred)
+      - versioned envelope v1 / v2 (folders + videos restored; any other keys ignored)
       - legacy plain array of videos (folders empty)
     """
     if isinstance(data, list):
@@ -200,12 +206,12 @@ def parse_and_validate_backup(data: Any) -> tuple[list[dict], list[dict]]:
             ),
         )
 
-    if version != BACKUP_VERSION:
+    if version not in SUPPORTED_BACKUP_VERSIONS:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Unsupported backup version: expected {BACKUP_VERSION}, "
-                f"got {version!r}."
+                f"Unsupported backup version: expected one of "
+                f"{sorted(SUPPORTED_BACKUP_VERSIONS)}, got {version!r}."
             ),
         )
 

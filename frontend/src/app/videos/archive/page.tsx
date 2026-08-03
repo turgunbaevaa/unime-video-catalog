@@ -4,15 +4,16 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { getVideos, updateVideo, deleteVideo, getFolders, updateFolder, deleteFolder, Video, Folder } from "@/src/lib/api";
+import { handleClientError, showSuccess, showWarning } from "@/src/lib/notify";
 
-interface PlaylistItem {
-  isPlaylist: boolean;
-  groupId: string;
+interface ConferenceItem {
+  isConference: true;
+  conferenceGroup: string;
   videos: Video[];
   activePartIndex: number;
 }
 
-type DisplayItem = Video | PlaylistItem;
+type DisplayItem = Video | ConferenceItem;
 
 function ArchiveContent() {
   const searchParams = useSearchParams();
@@ -46,11 +47,12 @@ function ArchiveContent() {
     const singles: Video[] = [];
 
     videos.forEach(video => {
-      if (video.group_id) {
-        if (!grouped.has(video.group_id)) {
-          grouped.set(video.group_id, []);
+      const group = video.conference_group?.trim();
+      if (group) {
+        if (!grouped.has(group)) {
+          grouped.set(group, []);
         }
-        grouped.get(video.group_id)!.push(video);
+        grouped.get(group)!.push(video);
       } else {
         singles.push(video);
       }
@@ -58,18 +60,18 @@ function ArchiveContent() {
 
     const displayList: DisplayItem[] = [...singles];
 
-    grouped.forEach((groupVideos, groupId) => {
-      const sortedVideos = groupVideos.sort((a, b) => (a.part_number || 0) - (b.part_number || 0));
-      displayList.push({ isPlaylist: true, groupId, videos: sortedVideos, activePartIndex: 0 });
+    grouped.forEach((groupVideos, conferenceGroup) => {
+      const sortedVideos = groupVideos.sort((a, b) => (a.conference_part || 0) - (b.conference_part || 0));
+      displayList.push({ isConference: true, conferenceGroup, videos: sortedVideos, activePartIndex: 0 });
     });
 
     return displayList;
   };
 
-  const handlePlaylistChange = (groupId: string, newIndex: number) => {
-    setDisplayItems(prevItems => 
+  const handleConferencePartChange = (conferenceGroup: string, newIndex: number) => {
+    setDisplayItems(prevItems =>
       prevItems.map(item => {
-        if ('isPlaylist' in item && item.groupId === groupId) {
+        if ('isConference' in item && item.conferenceGroup === conferenceGroup) {
           return { ...item, activePartIndex: newIndex };
         }
         return item;
@@ -97,7 +99,7 @@ function ArchiveContent() {
       setTotalPages(Math.ceil(videosData.total_count / limit));
 
     } catch (error) {
-      console.error("Error loading archive:", error);
+      handleClientError(error, "The folder list could not be loaded.");
     } finally {
       setIsLoading(false);
     }
@@ -119,14 +121,13 @@ function ArchiveContent() {
       }
       setRestoreModal({ isOpen: true, videoIds: ids });
     } catch (error) {
-      console.error("Failed to load folders:", error);
-      alert("Error loading active folders.");
+      handleClientError(error, "Active folders could not be loaded.");
     }
   };
 
   const executeRestore = async () => {
     if (restoreModal.videoIds.length === 0 || !selectedFolderId) {
-      alert("Please select a target folder.");
+      showWarning("Please select a target folder.");
       return;
     }
     try {
@@ -135,9 +136,9 @@ function ArchiveContent() {
       );
       await fetchArchiveData();
       setRestoreModal({ isOpen: false, videoIds: [] });
+      showSuccess("Video restored.");
     } catch (error) {
-      console.error("Failed to restore videos:", error);
-      alert("Error restoring videos.");
+      handleClientError(error, "The videos could not be restored.");
     }
   };
 
@@ -147,9 +148,9 @@ function ArchiveContent() {
       await Promise.all(deleteModal.videoIds.map(id => deleteVideo(id, true)));
       await fetchArchiveData();
       setDeleteModal({ isOpen: false, videoIds: [] });
+      showSuccess("Video permanently deleted.");
     } catch (error) {
-      console.error("Failed to delete video permanently:", error);
-      alert("Error deleting video.");
+      handleClientError(error, "This video could not be permanently deleted.");
     }
   };
 
@@ -157,10 +158,10 @@ function ArchiveContent() {
   const executeRestoreFolder = async (folderId: string) => {
     try {
       await updateFolder(folderId, { is_deleted: false });
-      await fetchArchiveData(); 
+      await fetchArchiveData();
+      showSuccess("Folder restored.");
     } catch (error) {
-      console.error("Failed to restore folder:", error);
-      alert("Error restoring folder.");
+      handleClientError(error, "This folder could not be updated.");
     }
   };
 
@@ -171,9 +172,13 @@ function ArchiveContent() {
       await deleteFolder(folderDeleteModal.folderId, true);
       await fetchArchiveData();
       setFolderDeleteModal({ isOpen: false, folderId: null });
+      showSuccess("Folder permanently deleted.");
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Error deleting folder. Ensure it is empty.";
-      setFolderDeleteError(message);
+      const message = handleClientError(
+        error,
+        "The folder cannot be permanently deleted because it still contains videos."
+      );
+      if (message) setFolderDeleteError(message);
     }
   };
 
@@ -261,19 +266,23 @@ function ArchiveContent() {
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
                   {displayItems.map((item) => {
-                    if ('isPlaylist' in item) {
+                    if ('isConference' in item) {
                       const safeIndex = Math.min(item.activePartIndex, Math.max(0, item.videos.length - 1));
                       const activeVideo = item.videos[safeIndex];
+                      const partLabel = (vid: Video, vIndex: number) =>
+                        vid.conference_part != null
+                          ? `Part ${vid.conference_part}`
+                          : `DVD ${vIndex + 1}`;
                       return (
-                        <div key={item.groupId} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+                        <div key={item.conferenceGroup} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col">
                           <div className="flex justify-between items-start mb-3">
-                            <h2 className="text-lg font-semibold text-slate-900 line-clamp-2" title={activeVideo.title}>{activeVideo.title}</h2>
-                            <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded border border-slate-200 whitespace-nowrap ml-2">Series ({item.videos.length})</span>
+                            <h2 className="text-lg font-semibold text-slate-900 line-clamp-2" title={item.conferenceGroup}>{item.conferenceGroup}</h2>
+                            <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded border border-slate-200 whitespace-nowrap ml-2">Conference ({item.videos.length})</span>
                           </div>
                           <div className="flex flex-wrap gap-2 mb-4 bg-gray-50 p-1.5 rounded-lg border border-gray-100">
                             {item.videos.map((vid, vIndex) => (
-                              <button key={vid._id} onClick={() => handlePlaylistChange(item.groupId, vIndex)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors flex-1 ${item.activePartIndex === vIndex ? 'bg-white text-slate-900 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
-                                Part {vid.part_number || vIndex + 1}
+                              <button key={vid._id} onClick={() => handleConferencePartChange(item.conferenceGroup, vIndex)} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors flex-1 ${item.activePartIndex === vIndex ? 'bg-white text-slate-900 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
+                                {partLabel(vid, vIndex)}
                               </button>
                             ))}
                           </div>
@@ -293,16 +302,16 @@ function ArchiveContent() {
                           <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 mt-auto">
                             <div className="flex justify-between items-center">
                               <a href={activeVideo.azure_stream_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors">
-                                Watch Part {activeVideo.part_number || item.activePartIndex + 1}
+                                Watch {partLabel(activeVideo, item.activePartIndex)}
                               </a>
                               <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">Archived</span>
                             </div>
                             <div className="flex gap-2 mt-3">
                               <button type="button" onClick={() => confirmRestore(item.videos.map(v => v._id))} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
-                                  Restore Entire Series
+                                  Restore Conference
                               </button>
                               <button type="button" onClick={() => setDeleteModal({ isOpen: true, videoIds: item.videos.map(v => v._id) })} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-white border border-gray-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm">
-                                Delete Series
+                                Delete Conference
                               </button>
                             </div>
                           </div>
@@ -386,7 +395,7 @@ function ArchiveContent() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 className="text-xl font-semibold text-gray-900 mb-2">Delete Folder?</h3>
-            <p className="text-gray-500 mb-4">This will permanently delete the folder. It must be empty (no videos inside) to be deleted.</p>
+            <p className="text-gray-500 mb-4">This will permanently delete the folder. It must be empty (no videos inside).</p>
             
             {folderDeleteError && (
               <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-medium">

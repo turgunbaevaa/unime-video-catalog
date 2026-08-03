@@ -1,13 +1,11 @@
-from fastapi import FastAPI, Response, UploadFile, File, HTTPException
+from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.database import client, database
+from app.database import client, ensure_indexes
 from app.routers import videos
 from app.routers import export
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
-import json
-from bson import ObjectId
 from app.routers import folders
 from app.routers import search
 from app.routers import import_backup
@@ -18,6 +16,8 @@ async def lifespan(app: FastAPI):
     try:
         await client.admin.command('ping')
         print("Successfully connected to MongoDB! 🎉")
+        await ensure_indexes()
+        print("MongoDB indexes ensured.")
     except Exception as e:
         print(f"Error connecting to MongoDB: {e}")
     yield

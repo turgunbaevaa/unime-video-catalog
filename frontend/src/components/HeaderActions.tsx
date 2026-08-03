@@ -9,8 +9,6 @@ export default function HeaderActions() {
   const isAdmin = !!session;
   const pathname = usePathname();
 
-  // Если мы находимся на странице конкретной папки или в архиве, 
-  // кнопка Add Folder может отличаться, но базовые кнопки хедера держим здесь:
   return (
     <div className="flex items-center gap-2">
       {isAdmin ? (

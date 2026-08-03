@@ -11,6 +11,7 @@ import {
   bulkCreateVideosWithProgress,
   VideoBulkResponse,
 } from "@/src/lib/api";
+import { handleClientError, showSuccess, showWarning } from "@/src/lib/notify";
 
 type UploadMode = "single" | "bulk";
 
@@ -24,7 +25,6 @@ function NewVideoContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingFolder, setIsCheckingFolder] = useState(true);
   const [folder, setFolder] = useState<Folder | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   // Shared metadata (single + bulk)
   const [authors, setAuthors] = useState("");
@@ -33,8 +33,8 @@ function NewVideoContent() {
   // Single-only
   const [title, setTitle] = useState("");
   const [streamUrl, setStreamUrl] = useState("");
-  const [groupId, setGroupId] = useState("");
-  const [partNumber, setPartNumber] = useState("");
+  const [conferenceName, setConferenceName] = useState("");
+  const [conferencePart, setConferencePart] = useState("");
 
   // Bulk-only
   const [bulkUrls, setBulkUrls] = useState("");
@@ -61,15 +61,14 @@ function NewVideoContent() {
       try {
         const folderData = await getFolderById(folderId);
         if (folderData.is_deleted) {
-          alert("Security Alert: Cannot add videos to an archived folder!");
+          showWarning("Cannot add videos to an archived folder.");
           router.push("/videos/archive");
           return;
         }
         setFolder(folderData);
         setIsCheckingFolder(false);
       } catch (error) {
-        console.error("Folder not found", error);
-        alert("Error: Target folder does not exist.");
+        handleClientError(error, "The target folder does not exist.");
         router.push("/");
       }
     };
@@ -84,12 +83,11 @@ function NewVideoContent() {
   const handleSingleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!folderId) {
-      setError("Videos must be created inside a folder. Open a folder and use Add Video.");
+      showWarning("Videos must be created inside a folder. Open a folder and use Add Video.");
       return;
     }
 
     setIsLoading(true);
-    setError(null);
 
     const payload: VideoCreate = {
       title,
@@ -99,20 +97,22 @@ function NewVideoContent() {
       folder_id: folderId,
     };
 
-    if (groupId.trim()) {
-      payload.group_id = groupId.trim();
-    }
-    if (partNumber.trim()) {
-      payload.part_number = parseInt(partNumber, 10);
+    const trimmedConference = conferenceName.trim();
+    if (trimmedConference) {
+      payload.conference_group = trimmedConference;
+      const partNum = parseInt(conferencePart, 10);
+      if (conferencePart.trim() && !Number.isNaN(partNum)) {
+        payload.conference_part = partNum;
+      }
     }
 
     try {
       await createVideo(payload);
+      showSuccess("Video created.");
       router.push(`/folders/${folderId}`);
       router.refresh();
     } catch (err) {
-      console.error(err);
-      setError("An error occurred while saving the video.");
+      handleClientError(err, "This video could not be created.");
     } finally {
       setIsLoading(false);
     }
@@ -121,20 +121,19 @@ function NewVideoContent() {
   const handleBulkSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!folderId) {
-      setError("Videos must be created inside a folder.");
+      showWarning("Videos must be created inside a folder.");
       return;
     }
 
     const urls = bulkUrls.split(/\r?\n/);
     if (!urls.some((u) => u.trim())) {
-      setError("Paste at least one Azure URL (one per line).");
+      showWarning("Paste at least one Azure URL (one per line).");
       return;
     }
 
     const controller = new AbortController();
     abortRef.current = controller;
     setIsLoading(true);
-    setError(null);
     setBulkResult(null);
     setProgress({ current: 0, total: urls.filter((u) => u.trim()).length || 1, url: "" });
 
@@ -159,12 +158,12 @@ function NewVideoContent() {
       );
       setBulkResult(result);
       setProgress(null);
+      showSuccess(`Bulk upload complete: ${result.summary.created} video(s) created.`);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        setError("Bulk upload cancelled.");
+        showWarning("Bulk upload cancelled.");
       } else {
-        console.error(err);
-        setError(err instanceof Error ? err.message : "Bulk upload failed.");
+        handleClientError(err, "The bulk upload could not be completed.");
       }
       setProgress(null);
     } finally {
@@ -245,7 +244,6 @@ function NewVideoContent() {
             onClick={() => {
               setMode("single");
               setBulkResult(null);
-              setError(null);
             }}
             disabled={isLoading}
             className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
@@ -260,7 +258,6 @@ function NewVideoContent() {
             type="button"
             onClick={() => {
               setMode("bulk");
-              setError(null);
             }}
             disabled={isLoading}
             className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
@@ -272,12 +269,6 @@ function NewVideoContent() {
             Bulk Upload
           </button>
         </div>
-
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm font-medium">
-            {error}
-          </div>
-        )}
 
         {mode === "single" ? (
           <form
@@ -315,40 +306,42 @@ function NewVideoContent() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <div>
-                  <label htmlFor="groupId" className="block text-sm font-medium text-slate-700 mb-1">
-                    Playlist Group ID (Optional)
-                  </label>
-                  <input
-                    id="groupId"
-                    type="text"
-                    value={groupId}
-                    onChange={(e) => setGroupId(e.target.value)}
-                    placeholder="e.g. history_rome_2026"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-colors text-sm"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="partNumber" className="block text-sm font-medium text-slate-700 mb-1">
-                    Part / CD Number
-                  </label>
-                  <input
-                    id="partNumber"
-                    type="number"
-                    min="1"
-                    value={partNumber}
-                    onChange={(e) => setPartNumber(e.target.value)}
-                    placeholder="e.g. 1, 2, 3"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-colors text-sm"
-                  />
-                </div>
-              </div>
+            <div>
+              <label htmlFor="conferenceName" className="block text-sm font-medium text-slate-700 mb-1">
+                Conference name (optional)
+              </label>
+              <input
+                id="conferenceName"
+                type="text"
+                value={conferenceName}
+                onChange={(e) => setConferenceName(e.target.value)}
+                placeholder="e.g. Storia Romana 2026"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-colors"
+              />
+            </div>
 
-              <div>
-                <label htmlFor="authors" className="block text-sm font-medium text-slate-700 mb-1">
-                  Authors
-                </label>
+            <div>
+              <label htmlFor="conferencePart" className="block text-sm font-medium text-slate-700 mb-1">
+                Part number (optional)
+              </label>
+              <input
+                id="conferencePart"
+                type="number"
+                min={1}
+                value={conferencePart}
+                onChange={(e) => setConferencePart(e.target.value)}
+                placeholder="e.g. 1"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-colors"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Videos with the same conference name are grouped together in the folder view.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="authors" className="block text-sm font-medium text-slate-700 mb-1">
+                Authors
+              </label>
                 <input
                   id="authors"
                   type="text"

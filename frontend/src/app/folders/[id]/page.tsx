@@ -4,18 +4,17 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { getVideos, getFolderById, deleteVideo, deleteFolder, updateVideo, updateFolder, getFolders, Video, Folder } from "@/src/lib/api";
+import { handleClientError, showSuccess, showWarning } from "@/src/lib/notify";
 import { useSession } from "next-auth/react";
 
-// Интерфейс для сгруппированного плейлиста
-interface PlaylistItem {
-  isPlaylist: boolean;
-  groupId: string;
+interface ConferenceItem {
+  isConference: true;
+  conferenceGroup: string;
   videos: Video[];
   activePartIndex: number;
 }
 
-// Тип, объединяющий одиночные видео и плейлисты для рендера
-type DisplayItem = Video | PlaylistItem;
+type DisplayItem = Video | ConferenceItem;
 
 function FolderContent() {
   const params = useParams();
@@ -32,29 +31,23 @@ function FolderContent() {
   const limit = 12;
 
   const [folder, setFolder] = useState<Folder | null>(null);
-  
-  // Processed display items (playlists + singles)
   const [displayItems, setDisplayItems] = useState<DisplayItem[]>([]);
-  
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [folderSearch, setFolderSearch] = useState(qParam);
 
-  // Edit folder modal
   const [isEditFolderOpen, setIsEditFolderOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [isSavingFolder, setIsSavingFolder] = useState(false);
 
-  // Стейты для восстановления видео
   const [restoreModal, setRestoreModal] = useState<{ isOpen: boolean; videoIds: string[]; }>({ isOpen: false, videoIds: [] });
   const [activeFolders, setActiveFolders] = useState<Folder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("");
 
-  // Стейт для удаления (теперь принимает массив videoIds)
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
-    videoIds: string[]; 
+    videoIds: string[];
     type: 'soft' | 'permanent' | null;
   }>({ isOpen: false, videoIds: [], type: null });
 
@@ -63,20 +56,19 @@ function FolderContent() {
     type: "soft" | "permanent" | null;
   }>({ isOpen: false, type: null });
 
-  // Стейт для красивого отображения ошибки при удалении папки
   const [folderDeleteError, setFolderDeleteError] = useState<string | null>(null);
 
-  // Функция для группировки видео в плейлисты
   const groupVideos = (videos: Video[]): DisplayItem[] => {
     const grouped = new Map<string, Video[]>();
     const singles: Video[] = [];
 
     videos.forEach(video => {
-      if (video.group_id) {
-        if (!grouped.has(video.group_id)) {
-          grouped.set(video.group_id, []);
+      const group = video.conference_group?.trim();
+      if (group) {
+        if (!grouped.has(group)) {
+          grouped.set(group, []);
         }
-        grouped.get(video.group_id)!.push(video);
+        grouped.get(group)!.push(video);
       } else {
         singles.push(video);
       }
@@ -84,17 +76,16 @@ function FolderContent() {
 
     const displayList: DisplayItem[] = [...singles];
 
-    grouped.forEach((groupVideos, groupId) => {
-      // Сортируем части по порядку (если part_number есть)
+    grouped.forEach((groupVideos, conferenceGroup) => {
       const sortedVideos = groupVideos.sort((a, b) => {
-        return (a.part_number || 0) - (b.part_number || 0);
+        return (a.conference_part || 0) - (b.conference_part || 0);
       });
 
       displayList.push({
-        isPlaylist: true,
-        groupId,
+        isConference: true,
+        conferenceGroup,
         videos: sortedVideos,
-        activePartIndex: 0, 
+        activePartIndex: 0,
       });
     });
 
@@ -122,11 +113,11 @@ function FolderContent() {
           qParam || undefined,
           sortParam
         );
-        
+
         setDisplayItems(groupVideos(videosData.items));
         setTotalPages(Math.ceil(videosData.total_count / limit) || 1);
       } catch (error) {
-        console.error("Error loading folder data:", error);
+        handleClientError(error, "This folder could not be loaded.");
       } finally {
         setIsLoading(false);
       }
@@ -176,19 +167,18 @@ function FolderContent() {
       });
       setFolder(updated);
       setIsEditFolderOpen(false);
+      showSuccess("Folder updated.");
     } catch (error) {
-      console.error("Failed to update folder:", error);
-      alert("Error updating folder.");
+      handleClientError(error, "This folder could not be updated.");
     } finally {
       setIsSavingFolder(false);
     }
   };
 
-  // Смена активного диска внутри плейлиста
-  const handlePlaylistChange = (groupId: string, newIndex: number) => {
-    setDisplayItems(prevItems => 
+  const handleConferencePartChange = (conferenceGroup: string, newIndex: number) => {
+    setDisplayItems(prevItems =>
       prevItems.map(item => {
-        if ('isPlaylist' in item && item.groupId === groupId) {
+        if ('isConference' in item && item.conferenceGroup === conferenceGroup) {
           return { ...item, activePartIndex: newIndex };
         }
         return item;
@@ -208,7 +198,7 @@ function FolderContent() {
       await Promise.all(
         videoIds.map(id => deleteVideo(id, type === 'permanent'))
       );
-    
+
       const isArchived = folder?.is_deleted ? true : undefined;
       const data = await getVideos(
         false,
@@ -219,13 +209,19 @@ function FolderContent() {
         qParam || undefined,
         sortParam
       );
-    
+
       setDisplayItems(groupVideos(data.items));
       setTotalPages(Math.ceil(data.total_count / limit));
-    
+
       setDeleteModal({ isOpen: false, videoIds: [], type: null });
+      showSuccess(deleteModal.type === "permanent" ? "Video permanently deleted." : "Video archived.");
     } catch (error) {
-      console.error("Failed to delete videos:", error);
+      handleClientError(
+        error,
+        deleteModal.type === "permanent"
+          ? "This video could not be permanently deleted."
+          : "This video could not be archived."
+      );
     }
   };
 
@@ -240,14 +236,13 @@ function FolderContent() {
       }
       setRestoreModal({ isOpen: true, videoIds: ids });
     } catch (error) {
-      console.error("Failed to load folders:", error);
-      alert("Error loading active folders.");
+      handleClientError(error, "Active folders could not be loaded.");
     }
   };
 
   const executeRestore = async () => {
     if (restoreModal.videoIds.length === 0 || !selectedFolderId) {
-      alert("Please select a target folder.");
+      showWarning("Please select a target folder.");
       return;
     }
     try {
@@ -266,9 +261,9 @@ function FolderContent() {
       );
       setDisplayItems(groupVideos(data.items));
       setRestoreModal({ isOpen: false, videoIds: [] });
+      showSuccess("Video restored.");
     } catch (error) {
-      console.error("Failed to restore videos:", error);
-      alert("Error restoring videos.");
+      handleClientError(error, "The videos could not be restored.");
     }
   };
 
@@ -277,11 +272,17 @@ function FolderContent() {
     try {
       await deleteFolder(folderId, folderDeleteModal.type === "permanent");
       setFolderDeleteModal({ isOpen: false, type: null });
+      showSuccess(
+        folderDeleteModal.type === "permanent" ? "Folder permanently deleted." : "Folder archived."
+      );
       router.push("/");
-      router.refresh(); 
+      router.refresh();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Error deleting folder. Ensure it is empty.";
-      setFolderDeleteError(message);
+      const message = handleClientError(
+        err,
+        "The folder cannot be permanently deleted because it still contains videos."
+      );
+      if (message) setFolderDeleteError(message);
     }
   };
 
@@ -301,23 +302,20 @@ function FolderContent() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
-      {/* --- HEADER --- */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            
-            <Link 
-              href={folder.is_deleted ? "/videos/archive" : "/"} 
+            <Link
+              href={folder.is_deleted ? "/videos/archive" : "/"}
               className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
             >
               &larr; {folder.is_deleted ? "Back to Archive" : "Back to Catalog"}
             </Link>
-            
             <div className="h-6 w-px bg-gray-300"></div>
             <h1 className="text-xl font-semibold tracking-tight text-slate-900 line-clamp-1">
               <span className="text-gray-400 font-normal mr-2">
                 {folder.is_deleted ? "Archived Folder:" : "Folder:"}
-              </span> 
+              </span>
               {folder.name}
             </h1>
           </div>
@@ -345,7 +343,7 @@ function FolderContent() {
                     Archive Folder
                   </button>
                 )}
-                
+
                 <button
                   onClick={() => setFolderDeleteModal({ isOpen: true, type: 'permanent' })}
                   className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm"
@@ -353,12 +351,12 @@ function FolderContent() {
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                 </button>
-                
+
                 {!folder.is_deleted && (
                   <>
                     <div className="h-6 w-px bg-gray-300 mx-1"></div>
                     <Link
-                      href={`/videos/new?folderId=${folderId}&returnPage=${currentPage}`}
+                      href={`/videos/new?folderId=${folderId}`}
                       className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
                     >
                       + Add Video
@@ -371,7 +369,6 @@ function FolderContent() {
         </div>
       </header>
 
-      {/* --- CONTENT --- */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {folder.description && (
           <p className="text-gray-500 mb-4 max-w-2xl">{folder.description}</p>
@@ -441,7 +438,7 @@ function FolderContent() {
             </p>
             {isAdmin && !folder.is_deleted && !qParam && (
               <Link
-                href={`/videos/new?folderId=${folderId}&returnPage=${currentPage}`}
+                href={`/videos/new?folderId=${folderId}`}
                 className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
               >
                 Upload First Video
@@ -451,21 +448,27 @@ function FolderContent() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
             {displayItems.map((item) => {
-              
-              if ('isPlaylist' in item) {
-                // ПРЕДОХРАНИТЕЛЬ: защищает от краша при удалении одной из частей плейлиста
+              if ('isConference' in item) {
                 const safeIndex = Math.min(item.activePartIndex, Math.max(0, item.videos.length - 1));
                 const activeVideo = item.videos[safeIndex];
-                
+                const partLabel = (vid: Video, vIndex: number) =>
+                  vid.conference_part != null
+                    ? `Part ${vid.conference_part}`
+                    : `DVD ${vIndex + 1}`;
+
                 return (
-                  <div key={item.groupId} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col">
-                    
+                  <div key={item.conferenceGroup} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col">
                     <div className="flex justify-between items-start mb-3">
-                      <h2 className="text-lg font-semibold text-slate-900 line-clamp-2" title={activeVideo.title}>
-                        {activeVideo.title}
-                      </h2>
+                      <div className="min-w-0 flex-1">
+                        <h2 className="text-lg font-semibold text-slate-900 line-clamp-2" title={item.conferenceGroup}>
+                          {item.conferenceGroup}
+                        </h2>
+                        <p className="text-sm text-gray-500 mt-0.5 line-clamp-1" title={activeVideo.title}>
+                          {activeVideo.title}
+                        </p>
+                      </div>
                       <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded border border-slate-200 whitespace-nowrap ml-2">
-                        Series ({item.videos.length})
+                        Conference ({item.videos.length})
                       </span>
                     </div>
 
@@ -473,14 +476,14 @@ function FolderContent() {
                       {item.videos.map((vid, vIndex) => (
                         <button
                           key={vid._id}
-                          onClick={() => handlePlaylistChange(item.groupId, vIndex)}
+                          onClick={() => handleConferencePartChange(item.conferenceGroup, vIndex)}
                           className={`px-3 py-1 text-xs font-medium rounded-md transition-colors flex-1 ${
-                            item.activePartIndex === vIndex 
-                              ? 'bg-white text-slate-900 shadow-sm border border-gray-200' 
+                            item.activePartIndex === vIndex
+                              ? 'bg-white text-slate-900 shadow-sm border border-gray-200'
                               : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
                           }`}
                         >
-                          Part {vid.part_number || vIndex + 1}
+                          {partLabel(vid, vIndex)}
                         </button>
                       ))}
                     </div>
@@ -489,7 +492,7 @@ function FolderContent() {
                       <div className="mb-3">
                         <span className="text-xs text-gray-400 font-medium uppercase tracking-wider block mb-1">Authors</span>
                         <span className="text-sm text-slate-700 block line-clamp-1">
-                          {activeVideo.authors.join(', ')}
+                          {(activeVideo.authors ?? []).join(', ')}
                         </span>
                       </div>
 
@@ -508,7 +511,7 @@ function FolderContent() {
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-4">
                           <a href={activeVideo.azure_stream_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors">
-                            Watch Part {activeVideo.part_number || item.activePartIndex + 1}
+                            Watch {partLabel(activeVideo, item.activePartIndex)}
                           </a>
                           <Link href={`/videos/${activeVideo._id}`} className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline transition-colors">
                             Details &rarr;
@@ -526,85 +529,16 @@ function FolderContent() {
                               <button type="button" onClick={() => router.push(`/videos/${activeVideo._id}/edit`)} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                                 Edit
                               </button>
-                              <button type="button" onClick={() => confirmDelete(item.videos.map(v => v._id), 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
-                                Archive Series
-                              </button>
-                            </>
-                          ) : (
-                            <button type="button" onClick={() => confirmRestore(item.videos.map(v => v._id))} className="flex-1 py-1.5 px-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-md cursor-pointer">
-                              Restore Series
-                            </button>
-                          )}
-                          <button type="button" onClick={() => confirmDelete(item.videos.map(v => v._id), 'permanent')} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors shadow-sm cursor-pointer">
-                            Delete Series
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              } 
-              
-              // IF THIS IS A SINGLE VIDEO
-              else {
-                const video = item as Video;
-                return (
-                  <div key={video._id} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col">
-                    <h2 className="text-lg font-semibold text-slate-900 mb-3 line-clamp-2" title={video.title}>
-                      {video.title}
-                    </h2>
-
-                    <div className="mb-4 flex-grow">
-                      <div className="mb-3">
-                        <span className="text-xs text-gray-400 font-medium uppercase tracking-wider block mb-1">Authors</span>
-                        <span className="text-sm text-slate-700 block line-clamp-1" title={video.authors.join(', ')}>
-                          {video.authors.join(', ')}
-                        </span>
-                      </div>
-
-                      {video.tags && video.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {video.tags.map((tag, tagIdx) => (
-                            <span key={tagIdx} className="bg-gray-100 text-slate-600 text-[11px] font-medium px-2 py-0.5 rounded-full">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 mt-auto">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-4">
-                          <a href={video.azure_stream_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors">
-                            Watch Video
-                          </a>
-                          <Link href={`/videos/${video._id}`} className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline transition-colors">
-                            View Details &rarr;
-                          </Link>
-                        </div>
-                        {video.is_deleted && (
-                          <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-md">Deleted</span>
-                        )}
-                      </div>
-
-                      {isAdmin && (
-                        <div className="flex gap-2 mt-3">
-                          {!video.is_deleted ? (
-                            <>
-                              <button type="button" onClick={() => router.push(`/videos/${video._id}/edit`)} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
-                                Edit
-                              </button>
-                              <button type="button" onClick={() => confirmDelete([video._id], 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
+                              <button type="button" onClick={() => confirmDelete([activeVideo._id], 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                                 Archive
                               </button>
                             </>
                           ) : (
-                            <button type="button" onClick={() => confirmRestore([video._id])} className="flex-1 py-1.5 px-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-md cursor-pointer">
+                            <button type="button" onClick={() => confirmRestore([activeVideo._id])} className="flex-1 py-1.5 px-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-md cursor-pointer">
                               Restore
                             </button>
                           )}
-                          <button type="button" onClick={() => confirmDelete([video._id], 'permanent')} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors shadow-sm cursor-pointer">
+                          <button type="button" onClick={() => confirmDelete([activeVideo._id], 'permanent')} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors shadow-sm cursor-pointer">
                             Delete
                           </button>
                         </div>
@@ -613,11 +547,76 @@ function FolderContent() {
                   </div>
                 );
               }
+
+              const video = item as Video;
+              return (
+                <div key={video._id} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+                  <h2 className="text-lg font-semibold text-slate-900 mb-3 line-clamp-2" title={video.title}>
+                    {video.title}
+                  </h2>
+
+                  <div className="mb-4 flex-grow">
+                    <div className="mb-3">
+                      <span className="text-xs text-gray-400 font-medium uppercase tracking-wider block mb-1">Authors</span>
+                      <span className="text-sm text-slate-700 block line-clamp-1" title={(video.authors ?? []).join(', ')}>
+                        {(video.authors ?? []).join(', ')}
+                      </span>
+                    </div>
+
+                    {video.tags && video.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {video.tags.map((tag, tagIdx) => (
+                          <span key={tagIdx} className="bg-gray-100 text-slate-600 text-[11px] font-medium px-2 py-0.5 rounded-full">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 mt-auto">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-4">
+                        <a href={video.azure_stream_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors">
+                          Watch Video
+                        </a>
+                        <Link href={`/videos/${video._id}`} className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline transition-colors">
+                          View Details &rarr;
+                        </Link>
+                      </div>
+                      {video.is_deleted && (
+                        <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-md">Deleted</span>
+                      )}
+                    </div>
+
+                    {isAdmin && (
+                      <div className="flex gap-2 mt-3">
+                        {!video.is_deleted ? (
+                          <>
+                            <button type="button" onClick={() => router.push(`/videos/${video._id}/edit`)} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
+                              Edit
+                            </button>
+                            <button type="button" onClick={() => confirmDelete([video._id], 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
+                              Archive
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" onClick={() => confirmRestore([video._id])} className="flex-1 py-1.5 px-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-md cursor-pointer">
+                            Restore
+                          </button>
+                        )}
+                        <button type="button" onClick={() => confirmDelete([video._id], 'permanent')} className="flex-1 py-1.5 px-2 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors shadow-sm cursor-pointer">
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
             })}
           </div>
         )}
 
-        {/* --- PAGINATION FOR VIDEO --- */}
         {!isLoading && totalPages > 1 && (
           <div className="flex justify-center items-center space-x-4 mt-12 mb-8">
             {currentPage > 1 ? (
@@ -689,7 +688,6 @@ function FolderContent() {
         </div>
       )}
 
-      {/* --- MODAL VIEW TO DELETE VIDEO --- */}
       {deleteModal.isOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl relative pointer-events-auto">
@@ -709,7 +707,6 @@ function FolderContent() {
         </div>
       )}
 
-      {/* --- MODAL VIEW TO DELETE A FOLDER --- */}
       {folderDeleteModal.isOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl relative pointer-events-auto">
@@ -729,21 +726,21 @@ function FolderContent() {
             )}
 
             <div className="flex justify-end gap-3 relative z-10">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => {
                   setFolderDeleteModal({ isOpen: false, type: null });
                   setFolderDeleteError(null);
-                }} 
+                }}
                 className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
               >
                 {folderDeleteError ? "Close" : "Cancel"}
               </button>
-              
+
               {!folderDeleteError && (
-                <button 
-                  type="button" 
-                  onClick={executeFolderDelete} 
+                <button
+                  type="button"
+                  onClick={executeFolderDelete}
                   className={`px-4 py-2 rounded-xl text-sm font-medium text-white transition-colors shadow-sm cursor-pointer ${folderDeleteModal.type === 'permanent' ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-900 hover:bg-slate-800'}`}
                 >
                   {folderDeleteModal.type === 'permanent' ? 'Delete' : 'Archive'}
@@ -754,7 +751,6 @@ function FolderContent() {
         </div>
       )}
 
-      {/* --- MODAL VIEW TO RESTORE VIDEO --- */}
       {restoreModal.isOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">

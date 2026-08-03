@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { searchCatalog, isAbortError, Video, Folder } from "@/src/lib/api";
+import { handleClientError } from "@/src/lib/notify";
 
 function parsePage(raw: string | null): number {
   const value = Number(raw);
@@ -22,7 +23,6 @@ function SearchResultsContent() {
   const [totalFolders, setTotalFolders] = useState(0);
   const [totalVideos, setTotalVideos] = useState(0);
   const [isLoading, setIsLoading] = useState(Boolean(q));
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!q) return;
@@ -32,7 +32,6 @@ function SearchResultsContent() {
 
     const fetchResults = async () => {
       setIsLoading(true);
-      setError(null);
       setFolders([]);
       setVideos([]);
 
@@ -45,12 +44,11 @@ function SearchResultsContent() {
         setTotalVideos(data.total_videos || 0);
       } catch (err) {
         if (isAbortError(err) || cancelled) return;
-        console.error("Search failed:", err);
         setFolders([]);
         setVideos([]);
         setTotalFolders(0);
         setTotalVideos(0);
-        setError("Could not load search results. Please try again.");
+        handleClientError(err, "Search results could not be loaded. Please try again.");
       } finally {
         if (!cancelled && !controller.signal.aborted) {
           setIsLoading(false);
@@ -72,7 +70,6 @@ function SearchResultsContent() {
   const visibleTotalFolders = q ? totalFolders : 0;
   const visibleTotalVideos = q ? totalVideos : 0;
   const visibleLoading = Boolean(q) && isLoading;
-  const visibleError = q ? error : null;
 
   const totalHits = visibleTotalFolders + visibleTotalVideos;
   const totalPages = Math.max(
@@ -82,20 +79,17 @@ function SearchResultsContent() {
   );
   const pageOutOfRange =
     !visibleLoading &&
-    !visibleError &&
     q.length > 0 &&
     totalHits > 0 &&
     page > totalPages;
   const pageEmpty =
     !visibleLoading &&
-    !visibleError &&
     q.length > 0 &&
     totalHits > 0 &&
     visibleFolders.length === 0 &&
     visibleVideos.length === 0;
   const showPagination =
     !visibleLoading &&
-    !visibleError &&
     q.length > 0 &&
     totalHits > 0 &&
     totalPages > 1;
@@ -136,18 +130,7 @@ function SearchResultsContent() {
           </p>
         </div>
 
-        {visibleError ? (
-          <div className="text-center py-20 bg-red-50 border border-red-200 rounded-2xl shadow-sm">
-            <h3 className="text-lg font-medium text-red-800 mb-2">Search failed</h3>
-            <p className="text-sm text-red-600 mb-4">{visibleError}</p>
-            <Link
-              href={q ? `/search?q=${encodeURIComponent(q)}` : "/"}
-              className="text-sm font-medium text-red-700 hover:underline"
-            >
-              Try again
-            </Link>
-          </div>
-        ) : !q || totalHits === 0 ? (
+        {(!q || totalHits === 0) && !visibleLoading ? (
           <div className="text-center py-20 bg-white border border-gray-200 rounded-2xl shadow-sm">
             <h3 className="text-lg font-medium text-slate-900 mb-2">No results found</h3>
             <p className="text-sm text-gray-500">

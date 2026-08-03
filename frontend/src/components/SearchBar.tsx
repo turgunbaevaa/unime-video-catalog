@@ -10,6 +10,7 @@ import {
   Video,
   Folder,
 } from "@/src/lib/api";
+import { handleClientError } from "@/src/lib/notify";
 
 function SearchBarInner({ initialQuery }: { initialQuery: string }) {
   const [query, setQuery] = useState(initialQuery);
@@ -68,12 +69,12 @@ function SearchBarInner({ initialQuery }: { initialQuery: string }) {
         setIsOpen(true);
       } catch (err) {
         if (isAbortError(err)) return;
-        console.error("Search failed:", err);
         setVideoResults([]);
         setFolderResults([]);
         setResultQuery(trimmed);
         setError(true);
         setIsOpen(true);
+        handleClientError(err, "Search results could not be loaded. Please try again.");
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false);

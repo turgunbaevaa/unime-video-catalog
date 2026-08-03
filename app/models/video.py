@@ -35,8 +35,15 @@ class VideoCreate(BaseModel):
     azure_stream_url: str = Field(...,
                                   example="https://web.microsoftstream.com/video/example-id")
     folder_id: str = Field(..., description="ID of the folder this video belongs to")
-    group_id: Optional[str] = Field(None, description="Shared ID to group multiple CDs/parts together")
-    part_number: Optional[int] = Field(None, description="The part number (e.g., 1 for CD1, 2 for CD2)")
+    conference_group: Optional[str] = Field(
+        None,
+        description="Optional conference / multi-DVD group name",
+    )
+    conference_part: Optional[int] = Field(
+        None,
+        description="Optional part number within the conference group (e.g. DVD 1)",
+        ge=1,
+    )
 
 # 5. Model for UPDATING an existing video (all fields optional, only the ones provided are applied)
 class VideoUpdate(BaseModel):
@@ -48,8 +55,8 @@ class VideoUpdate(BaseModel):
     azure_stream_url: Optional[HttpUrl] = Field(None, example="https://web.microsoftstream.com/video/example-id")
 
     folder_id: Optional[str] = None
-    group_id: Optional[str] = None
-    part_number: Optional[int] = None
+    conference_group: Optional[str] = None
+    conference_part: Optional[int] = Field(None, ge=1)
 
 
 # 6. The complete video model (how it is stored in MongoDB and returned via the API)

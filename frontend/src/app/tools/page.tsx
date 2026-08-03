@@ -8,6 +8,7 @@ import {
   downloadDatabaseBackup,
   restoreDatabaseBackup,
 } from "@/src/lib/api";
+import { handleClientError, showSuccess } from "@/src/lib/notify";
 
 export default function ToolsPage() {
   const { data: session, status } = useSession();
@@ -17,9 +18,6 @@ export default function ToolsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(
-    null
-  );
 
   if (status === "loading") {
     return <div className="text-center py-20 text-gray-500">Verifying access...</div>;
@@ -43,25 +41,16 @@ export default function ToolsPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
-      setMessage(null);
     }
   };
 
   const handleExportBackup = async () => {
     setIsExporting(true);
-    setMessage(null);
     try {
       await downloadDatabaseBackup();
-      setMessage({
-        text: "Database backup downloaded successfully (folders + videos).",
-        type: "success",
-      });
+      showSuccess("Database backup downloaded successfully (folders + videos).");
     } catch (error) {
-      console.error(error);
-      setMessage({
-        text: error instanceof Error ? error.message : "Failed to export database backup.",
-        type: "error",
-      });
+      handleClientError(error, "The database backup could not be downloaded.");
     } finally {
       setIsExporting(false);
     }
@@ -72,25 +61,18 @@ export default function ToolsPage() {
 
     setIsRestoring(true);
     setUploadProgress(0);
-    setMessage(null);
 
     try {
       const data = await restoreDatabaseBackup(file, (percent) => {
         setUploadProgress(percent);
       });
-      setMessage({
-        text:
-          data.message ||
-          `Restored ${data.folders_restored} folders and ${data.videos_restored} videos.`,
-        type: "success",
-      });
+      showSuccess(
+        data.message ||
+          `Restored ${data.folders_restored} folders and ${data.videos_restored} videos.`
+      );
       setFile(null);
     } catch (error) {
-      console.error(error);
-      setMessage({
-        text: error instanceof Error ? error.message : "Error during restore.",
-        type: "error",
-      });
+      handleClientError(error, "The database could not be restored from this backup file.");
     } finally {
       setIsRestoring(false);
       setUploadProgress(null);
@@ -125,18 +107,6 @@ export default function ToolsPage() {
             </p>
           </div>
         </div>
-
-        {message && (
-          <div
-            className={`p-4 mb-6 rounded-lg border ${
-              message.type === "success"
-                ? "bg-green-50 border-green-200 text-green-800"
-                : "bg-red-50 border-red-200 text-red-800"
-            }`}
-          >
-            {message.text}
-          </div>
-        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">

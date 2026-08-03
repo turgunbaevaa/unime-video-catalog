@@ -140,6 +140,34 @@ def _validate_stream_url(url: str) -> Optional[str]:
     return None
 
 
+async def _ensure_active_folder(folder_id: str) -> None:
+    """Same folder rules as bulk upload: valid ObjectId, exists, not archived."""
+    folder_id = (folder_id or "").strip()
+    try:
+        folder_oid = ObjectId(folder_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Invalid folder_id") from exc
+
+    folder = await folders_collection.find_one({"_id": folder_oid})
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    if folder.get("is_deleted"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot add videos to an archived folder",
+        )
+
+
+async def _ensure_unique_stream_url(url: str) -> None:
+    """Reject create when azure_stream_url already exists (same as bulk)."""
+    existing = await videos_collection.find_one({"azure_stream_url": url})
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="Video with this URL already exists",
+        )
+
+
 async def insert_video_record(
     *,
     title: str,
@@ -148,8 +176,8 @@ async def insert_video_record(
     azure_stream_url: str,
     folder_id: str,
     date_recorded: Optional[datetime] = None,
-    group_id: Optional[str] = None,
-    part_number: Optional[int] = None,
+    conference_group: Optional[str] = None,
+    conference_part: Optional[int] = None,
     perform_ai_processing: bool = True,
     language: Optional[str] = None,
     publisher: Optional[str] = None,
@@ -173,10 +201,11 @@ async def insert_video_record(
         "opac_export": {"is_exported": False},
         "is_deleted": False,
     }
-    if group_id:
-        video_dict["group_id"] = group_id
-    if part_number is not None:
-        video_dict["part_number"] = part_number
+    group = (conference_group or "").strip()
+    if group:
+        video_dict["conference_group"] = group
+        if conference_part is not None:
+            video_dict["conference_part"] = conference_part
     if publisher:
         video_dict["publisher"] = publisher
     if copyright:
@@ -204,15 +233,21 @@ async def verify_admin(request: Request):
              dependencies=[Depends(verify_admin)])
 async def create_video(video: VideoCreate):
     video_dict = video.model_dump()
+    folder_id = str(video_dict["folder_id"]).strip()
+    stream_url = str(video_dict["azure_stream_url"]).strip()
+
+    await _ensure_active_folder(folder_id)
+    await _ensure_unique_stream_url(stream_url)
+
     return await insert_video_record(
         title=video_dict["title"],
         authors=video_dict.get("authors") or [],
         tags=video_dict.get("tags") or [],
-        azure_stream_url=str(video_dict["azure_stream_url"]),
-        folder_id=video_dict["folder_id"],
+        azure_stream_url=stream_url,
+        folder_id=folder_id,
         date_recorded=video_dict.get("date_recorded"),
-        group_id=video_dict.get("group_id"),
-        part_number=video_dict.get("part_number"),
+        conference_group=video_dict.get("conference_group"),
+        conference_part=video_dict.get("conference_part"),
         perform_ai_processing=True,
     )
 
@@ -228,16 +263,7 @@ async def bulk_create_videos(payload: VideoBulkCreate):
     Invalid / duplicate entries are skipped; valid entries are still created.
     """
     folder_id = payload.folder_id.strip()
-    try:
-        folder_oid = ObjectId(folder_id)
-    except InvalidId as exc:
-        raise HTTPException(status_code=400, detail="Invalid folder_id") from exc
-
-    folder = await folders_collection.find_one({"_id": folder_oid})
-    if not folder:
-        raise HTTPException(status_code=404, detail="Folder not found")
-    if folder.get("is_deleted"):
-        raise HTTPException(status_code=400, detail="Cannot add videos to an archived folder")
+    await _ensure_active_folder(folder_id)
 
     if len(payload.urls) > MAX_BULK_URLS:
         raise HTTPException(
@@ -379,20 +405,44 @@ async def get_all_videos(
 
     skip = (page - 1) * limit
 
-    # 1. Count the total number of unique TV series to ensure proper pagination
+    # 1. Count unique conference groups / standalone videos for pagination
     count_pipeline = [
         {"$match": query},
-        {"$group": {"_id": {"$ifNull": ["$group_id", "$_id"]}}},
+        {"$group": {
+            "_id": {
+                "$cond": [
+                    {
+                        "$and": [
+                            {"$ne": [{"$ifNull": ["$conference_group", ""]}, ""]},
+                            {"$ne": ["$conference_group", None]},
+                        ]
+                    },
+                    "$conference_group",
+                    "$_id",
+                ]
+            }
+        }},
         {"$count": "total"}
     ]
     count_result = await videos_collection.aggregate(count_pipeline).to_list(1)
     total_count = count_result[0]["total"] if count_result else 0
 
-    # 2. Take out the items, grouping them so as not to interrupt the series
+    # 2. Page by conference group (or single video id), then unwind members
     pipeline = [
         {"$match": query},
         {"$group": {
-            "_id": {"$ifNull": ["$group_id", "$_id"]},
+            "_id": {
+                "$cond": [
+                    {
+                        "$and": [
+                            {"$ne": [{"$ifNull": ["$conference_group", ""]}, ""]},
+                            {"$ne": ["$conference_group", None]},
+                        ]
+                    },
+                    "$conference_group",
+                    "$_id",
+                ]
+            },
             "videos": {"$push": "$$ROOT"},
             "created_at": {"$first": "$created_at"},
             "title": {"$first": "$title"},
@@ -402,7 +452,7 @@ async def get_all_videos(
         {"$limit": limit},
         {"$unwind": "$videos"},
         {"$replaceRoot": {"newRoot": "$videos"}},
-        {"$sort": {"group_id": 1, "part_number": 1}}
+        {"$sort": {"conference_group": 1, "conference_part": 1}}
     ]
 
     # limit * 50 retrieves all parts for the filtered groups (the limit here applies to groups, not videos)
@@ -442,24 +492,25 @@ async def update_video(video_id: str, video: VideoUpdate):
     if not target_video:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
 
-    # Moving the entire series when changing folders
-    if "folder_id" in update_data and target_video.get("group_id"):
-        new_folder_id = update_data["folder_id"]
+    if "is_deleted" in update_data:
+        if update_data["is_deleted"]:
+            update_data.setdefault("deleted_at", datetime.utcnow())
+            update_data["archived_with_folder"] = False
+        else:
+            update_data["deleted_at"] = None
+            update_data["archived_with_folder"] = False
 
-        # Updating the folder for all parts
-        await videos_collection.update_many(
-            {"group_id": target_video["group_id"]},
-            {"$set": {"folder_id": new_folder_id}}
-        )
+    if "conference_group" in update_data:
+        group = (update_data.get("conference_group") or "").strip()
+        if group:
+            update_data["conference_group"] = group
+        else:
+            update_data["conference_group"] = None
+            update_data["conference_part"] = None
 
-        # Apply the remaining updates to a specific video
-        await videos_collection.update_one(
-            {"_id": _to_object_id(video_id)}, {"$set": update_data}
-        )
-    else:
-        await videos_collection.update_one(
-            {"_id": _to_object_id(video_id)}, {"$set": update_data}
-        )
+    await videos_collection.update_one(
+        {"_id": _to_object_id(video_id)}, {"$set": update_data}
+    )
 
     if "folder_id" in update_data:
         await _touch_folder(update_data.get("folder_id"))
@@ -477,7 +528,13 @@ async def soft_delete_video(video_id: str):
     """Marks the record as deleted without removing it from the database."""
     result = await videos_collection.update_one(
         {"_id": _to_object_id(video_id)},
-        {"$set": {"is_deleted": True, "deleted_at": datetime.utcnow()}},
+        {
+            "$set": {
+                "is_deleted": True,
+                "deleted_at": datetime.utcnow(),
+                "archived_with_folder": False,
+            }
+        },
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
