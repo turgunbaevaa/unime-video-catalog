@@ -64,13 +64,6 @@ export function dismissToast(id: string) {
   notifyListeners();
 }
 
-export function clearToasts() {
-  timers.forEach((timer) => clearTimeout(timer));
-  timers.clear();
-  toasts = [];
-  notifyListeners();
-}
-
 export function pushToast(input: ToastInput): string {
   const message = (input.message || "").trim() || "An unexpected error occurred.";
   const type = input.type;
@@ -117,10 +110,6 @@ export function showError(message: string, title?: string) {
 
 export function showWarning(message: string, title?: string) {
   return pushToast({ type: "warning", message, title });
-}
-
-export function showInfo(message: string, title?: string) {
-  return pushToast({ type: "info", message, title });
 }
 
 /**

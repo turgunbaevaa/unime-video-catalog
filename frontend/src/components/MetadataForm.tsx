@@ -1,0 +1,276 @@
+"use client";
+
+import { useId, useState } from "react";
+import type { Video } from "@/src/lib/api";
+
+const inputClass =
+  "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-colors text-sm";
+
+export type MetadataFormValues = {
+  authors: string;
+  tags: string;
+  language: string;
+  dateRecorded: string;
+  publisher: string;
+  copyright: string;
+  description: string;
+  performAi: boolean;
+};
+
+export const emptyMetadataValues = (): MetadataFormValues => ({
+  authors: "",
+  tags: "",
+  language: "",
+  dateRecorded: "",
+  publisher: "",
+  copyright: "",
+  description: "",
+  performAi: true,
+});
+
+function todayISODateFromDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function todayISODate(): string {
+  return todayISODateFromDate(new Date());
+}
+
+/** Convert an ISO datetime (or date) string to yyyy-mm-dd for date inputs. */
+export function toDateInputValue(value?: string | null): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed.slice(0, 10);
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return todayISODateFromDate(parsed);
+}
+
+/** Populate MetadataForm values from an existing video (edit mode). */
+export function metadataValuesFromVideo(video: Video): MetadataFormValues {
+  const status = video.ai_processing?.status || "pending";
+  return {
+    authors: (video.authors ?? []).join(", "),
+    tags: (video.tags ?? []).join(", "),
+    language: video.ai_processing?.language?.trim() || "",
+    dateRecorded: toDateInputValue(video.date_recorded),
+    publisher: video.publisher?.trim() || "",
+    copyright: video.copyright?.trim() || "",
+    description: video.description?.trim() || "",
+    performAi: status !== "skipped",
+  };
+}
+
+type MetadataFormProps = {
+  values: MetadataFormValues;
+  onChange: (patch: Partial<MetadataFormValues>) => void;
+  disabled?: boolean;
+  /** When true, authors helper mentions application to all imported videos */
+  bulk?: boolean;
+  /** Edit mode: same fields; AI checkbox wording stays consistent */
+  mode?: "create" | "edit";
+  maxDate?: string;
+};
+
+/** Returns true when the yyyy-mm-dd value is after today. */
+export function isFutureDate(value: string): boolean {
+  if (!value.trim()) return false;
+  return value.trim() > todayISODate();
+}
+
+/** Split a comma-separated field into trimmed non-empty tokens. */
+export function parseCommaSeparated(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export default function MetadataForm({
+  values,
+  onChange,
+  disabled = false,
+  bulk = false,
+  mode = "create",
+  maxDate = todayISODate(),
+}: MetadataFormProps) {
+  const panelId = useId();
+  const hasAdditional =
+    Boolean(values.publisher.trim()) || Boolean(values.copyright.trim());
+  const [additionalOpen, setAdditionalOpen] = useState(hasAdditional);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <label htmlFor="meta-authors" className="block text-sm font-medium text-slate-700 mb-1">
+          Authors
+        </label>
+        <input
+          id="meta-authors"
+          type="text"
+          value={values.authors}
+          onChange={(e) => onChange({ authors: e.target.value })}
+          disabled={disabled}
+          placeholder={
+            bulk
+              ? "Comma-separated names (applied to all imported videos)"
+              : "Comma-separated names"
+          }
+          className={inputClass}
+        />
+      </div>
+
+      <div>
+        <label htmlFor="meta-tags" className="block text-sm font-medium text-slate-700 mb-1">
+          Tags
+        </label>
+        <input
+          id="meta-tags"
+          type="text"
+          value={values.tags}
+          onChange={(e) => onChange({ tags: e.target.value })}
+          disabled={disabled}
+          placeholder="Comma-separated tags"
+          className={inputClass}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label htmlFor="meta-language" className="block text-sm font-medium text-slate-700 mb-1">
+            Language
+          </label>
+          <input
+            id="meta-language"
+            type="text"
+            value={values.language}
+            onChange={(e) => onChange({ language: e.target.value })}
+            disabled={disabled}
+            placeholder="e.g. en, it"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="meta-dateRecorded"
+            className="block text-sm font-medium text-slate-700 mb-1"
+          >
+            Date recorded
+          </label>
+          <input
+            id="meta-dateRecorded"
+            type="date"
+            value={values.dateRecorded}
+            max={maxDate}
+            onChange={(e) => onChange({ dateRecorded: e.target.value })}
+            disabled={disabled}
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label htmlFor="meta-description" className="block text-sm font-medium text-slate-700 mb-1">
+          Description
+        </label>
+        <textarea
+          id="meta-description"
+          rows={3}
+          value={values.description}
+          onChange={(e) => onChange({ description: e.target.value })}
+          disabled={disabled}
+          className={`${inputClass} resize-none`}
+        />
+      </div>
+
+      <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={values.performAi}
+          onChange={(e) => onChange({ performAi: e.target.checked })}
+          disabled={disabled}
+          className="rounded border-gray-300"
+        />
+        {mode === "edit"
+          ? "Perform AI processing (pending when enabled; skipped when disabled)"
+          : "Perform AI processing (marks videos as pending for transcription)"}
+      </label>
+
+      <div className="border border-gray-200 rounded-lg">
+        <button
+          type="button"
+          id={`${panelId}-trigger`}
+          aria-expanded={additionalOpen}
+          aria-controls={`${panelId}-panel`}
+          disabled={disabled}
+          onClick={() => setAdditionalOpen((open) => !open)}
+          className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-gray-50 rounded-lg disabled:opacity-50 cursor-pointer"
+        >
+          <span>Additional metadata (optional)</span>
+          <svg
+            className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${
+              additionalOpen ? "rotate-180" : ""
+            }`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </button>
+        {additionalOpen && (
+          <div
+            id={`${panelId}-panel`}
+            role="region"
+            aria-labelledby={`${panelId}-trigger`}
+            className="space-y-5 px-4 pb-4 border-t border-gray-100 pt-4"
+          >
+            <div>
+              <label
+                htmlFor="meta-publisher"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                Publisher
+              </label>
+              <input
+                id="meta-publisher"
+                type="text"
+                value={values.publisher}
+                onChange={(e) => onChange({ publisher: e.target.value })}
+                disabled={disabled}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="meta-copyright"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                Copyright
+              </label>
+              <input
+                id="meta-copyright"
+                type="text"
+                value={values.copyright}
+                onChange={(e) => onChange({ copyright: e.target.value })}
+                disabled={disabled}
+                className={inputClass}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

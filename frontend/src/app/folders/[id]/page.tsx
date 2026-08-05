@@ -5,16 +5,13 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { getVideos, getFolderById, deleteVideo, deleteFolder, updateVideo, updateFolder, getFolders, Video, Folder } from "@/src/lib/api";
 import { handleClientError, showSuccess, showWarning } from "@/src/lib/notify";
+import {
+  DisplayItem,
+  groupVideosByConference,
+  isConferenceItem,
+  setConferenceActivePart,
+} from "@/src/lib/conferenceGrouping";
 import { useSession } from "next-auth/react";
-
-interface ConferenceItem {
-  isConference: true;
-  conferenceGroup: string;
-  videos: Video[];
-  activePartIndex: number;
-}
-
-type DisplayItem = Video | ConferenceItem;
 
 function FolderContent() {
   const params = useParams();
@@ -58,40 +55,6 @@ function FolderContent() {
 
   const [folderDeleteError, setFolderDeleteError] = useState<string | null>(null);
 
-  const groupVideos = (videos: Video[]): DisplayItem[] => {
-    const grouped = new Map<string, Video[]>();
-    const singles: Video[] = [];
-
-    videos.forEach(video => {
-      const group = video.conference_group?.trim();
-      if (group) {
-        if (!grouped.has(group)) {
-          grouped.set(group, []);
-        }
-        grouped.get(group)!.push(video);
-      } else {
-        singles.push(video);
-      }
-    });
-
-    const displayList: DisplayItem[] = [...singles];
-
-    grouped.forEach((groupVideos, conferenceGroup) => {
-      const sortedVideos = groupVideos.sort((a, b) => {
-        return (a.conference_part || 0) - (b.conference_part || 0);
-      });
-
-      displayList.push({
-        isConference: true,
-        conferenceGroup,
-        videos: sortedVideos,
-        activePartIndex: 0,
-      });
-    });
-
-    return displayList;
-  };
-
   useEffect(() => {
     setFolderSearch(qParam);
   }, [qParam]);
@@ -114,7 +77,7 @@ function FolderContent() {
           sortParam
         );
 
-        setDisplayItems(groupVideos(videosData.items));
+        setDisplayItems(groupVideosByConference(videosData.items));
         setTotalPages(Math.ceil(videosData.total_count / limit) || 1);
       } catch (error) {
         handleClientError(error, "This folder could not be loaded.");
@@ -176,13 +139,8 @@ function FolderContent() {
   };
 
   const handleConferencePartChange = (conferenceGroup: string, newIndex: number) => {
-    setDisplayItems(prevItems =>
-      prevItems.map(item => {
-        if ('isConference' in item && item.conferenceGroup === conferenceGroup) {
-          return { ...item, activePartIndex: newIndex };
-        }
-        return item;
-      })
+    setDisplayItems((prevItems) =>
+      setConferenceActivePart(prevItems, conferenceGroup, newIndex)
     );
   };
 
@@ -210,7 +168,7 @@ function FolderContent() {
         sortParam
       );
 
-      setDisplayItems(groupVideos(data.items));
+      setDisplayItems(groupVideosByConference(data.items));
       setTotalPages(Math.ceil(data.total_count / limit));
 
       setDeleteModal({ isOpen: false, videoIds: [], type: null });
@@ -259,7 +217,7 @@ function FolderContent() {
         qParam || undefined,
         sortParam
       );
-      setDisplayItems(groupVideos(data.items));
+      setDisplayItems(groupVideosByConference(data.items));
       setRestoreModal({ isOpen: false, videoIds: [] });
       showSuccess("Video restored.");
     } catch (error) {
@@ -448,7 +406,7 @@ function FolderContent() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
             {displayItems.map((item) => {
-              if ('isConference' in item) {
+              if (isConferenceItem(item)) {
                 const safeIndex = Math.min(item.activePartIndex, Math.max(0, item.videos.length - 1));
                 const activeVideo = item.videos[safeIndex];
                 const partLabel = (vid: Video, vIndex: number) =>

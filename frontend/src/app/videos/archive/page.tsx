@@ -5,15 +5,12 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { getVideos, updateVideo, deleteVideo, getFolders, updateFolder, deleteFolder, Video, Folder } from "@/src/lib/api";
 import { handleClientError, showSuccess, showWarning } from "@/src/lib/notify";
-
-interface ConferenceItem {
-  isConference: true;
-  conferenceGroup: string;
-  videos: Video[];
-  activePartIndex: number;
-}
-
-type DisplayItem = Video | ConferenceItem;
+import {
+  DisplayItem,
+  groupVideosByConference,
+  isConferenceItem,
+  setConferenceActivePart,
+} from "@/src/lib/conferenceGrouping";
 
 function ArchiveContent() {
   const searchParams = useSearchParams();
@@ -42,40 +39,9 @@ function ArchiveContent() {
   const [folderDeleteError, setFolderDeleteError] = useState<string | null>(null);
 
   // --- LOGIC FOR VIDEOS ---
-  const groupVideos = (videos: Video[]): DisplayItem[] => {
-    const grouped = new Map<string, Video[]>();
-    const singles: Video[] = [];
-
-    videos.forEach(video => {
-      const group = video.conference_group?.trim();
-      if (group) {
-        if (!grouped.has(group)) {
-          grouped.set(group, []);
-        }
-        grouped.get(group)!.push(video);
-      } else {
-        singles.push(video);
-      }
-    });
-
-    const displayList: DisplayItem[] = [...singles];
-
-    grouped.forEach((groupVideos, conferenceGroup) => {
-      const sortedVideos = groupVideos.sort((a, b) => (a.conference_part || 0) - (b.conference_part || 0));
-      displayList.push({ isConference: true, conferenceGroup, videos: sortedVideos, activePartIndex: 0 });
-    });
-
-    return displayList;
-  };
-
   const handleConferencePartChange = (conferenceGroup: string, newIndex: number) => {
-    setDisplayItems(prevItems =>
-      prevItems.map(item => {
-        if ('isConference' in item && item.conferenceGroup === conferenceGroup) {
-          return { ...item, activePartIndex: newIndex };
-        }
-        return item;
-      })
+    setDisplayItems((prevItems) =>
+      setConferenceActivePart(prevItems, conferenceGroup, newIndex)
     );
   };
 
@@ -95,7 +61,7 @@ function ArchiveContent() {
         (video: Video) => !foldersData.items.some((f: Folder) => f._id === video.folder_id)
       );
       
-      setDisplayItems(groupVideos(standaloneDeletedVideos));
+      setDisplayItems(groupVideosByConference(standaloneDeletedVideos));
       setTotalPages(Math.ceil(videosData.total_count / limit));
 
     } catch (error) {
@@ -266,7 +232,7 @@ function ArchiveContent() {
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
                   {displayItems.map((item) => {
-                    if ('isConference' in item) {
+                    if (isConferenceItem(item)) {
                       const safeIndex = Math.min(item.activePartIndex, Math.max(0, item.videos.length - 1));
                       const activeVideo = item.videos[safeIndex];
                       const partLabel = (vid: Video, vIndex: number) =>

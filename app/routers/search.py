@@ -54,7 +54,7 @@ async def global_search(
 ):
     """
     Global catalog search across folders and videos.
-    Soft-deleted records are excluded. Series grouping is not applied here.
+    Soft-deleted records are excluded. Conference grouping is not applied here.
     """
     query_text = q.strip()[:MAX_QUERY_LENGTH]
     if not query_text:

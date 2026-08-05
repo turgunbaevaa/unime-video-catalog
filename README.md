@@ -3,12 +3,12 @@
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.128-009688.svg)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Motor%20(async)-47A248.svg)
-![Status](https://img.shields.io/badge/status-in%20development-orange.svg)
+![Status](https://img.shields.io/badge/status-feature--complete-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 A catalog for lecture videos at the **University of Messina** — searchable metadata records for Azure/Microsoft Stream-hosted videos, enriched with AI-generated transcripts and summaries, and exportable to the university library OPAC via MARCXML.
 
-> 📚 **New to the project?** Read [`PLAN.md`](PLAN.md) — it's the onboarding guide and explains *why* the architecture looks the way it does, not just what to build. Current work items live in [`TASKS.md`](TASKS.md).
+> 📚 **New to the project?** Read [`PLAN.md`](PLAN.md) — it explains *why* the architecture looks the way it does.
 
 ## ✨ What it does
 
@@ -24,7 +24,7 @@ The videos themselves stay on Azure/Microsoft Stream — this system manages **r
 
 ```
 Next.js frontend  ──►  FastAPI backend  ──►  MongoDB
-   (planned)              app/                video records
+   (App Router)           app/                video & folder records
                             │
                             ▼
                    Transcription & summarization service (planned)
@@ -33,9 +33,9 @@ Next.js frontend  ──►  FastAPI backend  ──►  MongoDB
 
 | Component | Status | Tech |
 |-----------|--------|------|
-| Backend API (CRUD + MARCXML export) | ✅ working | FastAPI, Motor, Pydantic |
-| Web UI | 🚧 next up | Next.js (App Router) |
-| Authentication | 📋 planned | Azure AD / Entra ID |
+| Backend API (CRUD + MARCXML export + backup) | ✅ working | FastAPI, Motor, Pydantic |
+| Web UI (folders, upload, search, archive) | ✅ working | Next.js (App Router) |
+| Authentication | 📋 basic (NextAuth) | Azure AD / Entra ID planned |
 | Transcription service | 📋 planned | faster-whisper, standalone service |
 | AI summarization | 📋 planned | local LLM (OpenAI-compatible API) |
 
@@ -100,14 +100,19 @@ More variables (Azure AD, LLM endpoint) will be added as the planned phases land
 ├── app/                     # FastAPI backend
 │   ├── main.py              # Entry point, lifespan, router mounting
 │   ├── database.py          # MongoDB connection (Motor)
+│   ├── backup.py            # Backup / restore helpers
 │   ├── docker-compose.yml   # MongoDB service for local development
 │   ├── models/
-│   │   └── video.py         # Pydantic models (VideoCreate, VideoResponse, AIData, ...)
+│   │   ├── video.py         # Video Pydantic models
+│   │   └── folder.py        # Folder Pydantic models
 │   └── routers/
-│       ├── videos.py        # Video record CRUD
-│       └── export.py        # MARCXML export
-├── PLAN.md                  # Architecture guide & roadmap — start here
-├── TASKS.md                 # Current work items, by track
+│       ├── videos.py        # Video CRUD + bulk upload
+│       ├── folders.py       # Folder CRUD
+│       ├── search.py        # Global catalog search
+│       ├── export.py        # MARCXML + backup export
+│       └── import_backup.py # Backup restore
+├── frontend/                # Next.js App Router UI
+├── PLAN.md                  # Architecture guide
 └── requirements.txt
 ```
 

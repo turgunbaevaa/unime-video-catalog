@@ -248,7 +248,11 @@ async def create_video(video: VideoCreate):
         date_recorded=video_dict.get("date_recorded"),
         conference_group=video_dict.get("conference_group"),
         conference_part=video_dict.get("conference_part"),
-        perform_ai_processing=True,
+        perform_ai_processing=bool(video_dict.get("perform_ai_processing", True)),
+        language=video_dict.get("language"),
+        publisher=video_dict.get("publisher"),
+        copyright=video_dict.get("copyright"),
+        description=video_dict.get("description"),
     )
 
 
@@ -277,6 +281,7 @@ async def bulk_create_videos(payload: VideoBulkCreate):
     summary = VideoBulkSummary(total=len(payload.urls))
     results: List[VideoBulkItemResult] = []
     seen_in_batch: set[str] = set()
+    conference_part_seq = 0
 
     for raw in payload.urls:
         url = _normalize_url(raw if isinstance(raw, str) else str(raw))
@@ -327,6 +332,14 @@ async def bulk_create_videos(payload: VideoBulkCreate):
             continue
 
         title = _title_from_url(url)
+        conference_group = (payload.conference_group or "").strip() or None
+        conference_part = None
+        if conference_group:
+            if payload.conference_part is not None:
+                conference_part = payload.conference_part
+            else:
+                conference_part_seq += 1
+                conference_part = conference_part_seq
         try:
             created = await insert_video_record(
                 title=title,
@@ -335,6 +348,8 @@ async def bulk_create_videos(payload: VideoBulkCreate):
                 azure_stream_url=url,
                 folder_id=folder_id,
                 date_recorded=payload.date_recorded,
+                conference_group=conference_group,
+                conference_part=conference_part,
                 perform_ai_processing=payload.perform_ai_processing,
                 language=payload.language,
                 publisher=payload.publisher,
@@ -507,6 +522,26 @@ async def update_video(video_id: str, video: VideoUpdate):
         else:
             update_data["conference_group"] = None
             update_data["conference_part"] = None
+
+    # Language lives under ai_processing (same as create/bulk insert)
+    if "language" in update_data:
+        lang = update_data.pop("language")
+        lang_value = (lang or "").strip() or None
+        update_data["ai_processing.language"] = lang_value
+
+    if "perform_ai_processing" in update_data:
+        perform = bool(update_data.pop("perform_ai_processing"))
+        current_status = (target_video.get("ai_processing") or {}).get("status") or "pending"
+        if perform and current_status == "skipped":
+            update_data["ai_processing.status"] = "pending"
+        elif not perform and current_status in ("pending", "skipped"):
+            update_data["ai_processing.status"] = "skipped"
+
+    for field in ("publisher", "copyright", "description"):
+        if field in update_data:
+            value = update_data.get(field)
+            if isinstance(value, str):
+                update_data[field] = value.strip() or None
 
     await videos_collection.update_one(
         {"_id": _to_object_id(video_id)}, {"$set": update_data}

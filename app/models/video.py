@@ -44,6 +44,13 @@ class VideoCreate(BaseModel):
         description="Optional part number within the conference group (e.g. DVD 1)",
         ge=1,
     )
+    # Optional metadata (same fields as bulk upload)
+    language: Optional[str] = None
+    publisher: Optional[str] = None
+    copyright: Optional[str] = None
+    description: Optional[str] = None
+    perform_ai_processing: bool = True
+
 
 # 5. Model for UPDATING an existing video (all fields optional, only the ones provided are applied)
 class VideoUpdate(BaseModel):
@@ -57,17 +64,34 @@ class VideoUpdate(BaseModel):
     folder_id: Optional[str] = None
     conference_group: Optional[str] = None
     conference_part: Optional[int] = Field(None, ge=1)
+    # Optional metadata (same fields as create / bulk)
+    language: Optional[str] = None
+    publisher: Optional[str] = None
+    copyright: Optional[str] = None
+    description: Optional[str] = None
+    perform_ai_processing: Optional[bool] = None
 
 
 # 6. The complete video model (how it is stored in MongoDB and returned via the API)
-class VideoResponse(VideoCreate):
+class VideoResponse(BaseModel):
     id: str = Field(..., alias="_id", description="MongoDB ObjectId as string")
+    title: str
+    authors: List[str] = []
+    date_recorded: Optional[datetime] = None
+    tags: List[str] = []
+    azure_stream_url: str
+    folder_id: str
+    conference_group: Optional[str] = None
+    conference_part: Optional[int] = None
     ai_processing: AIData = Field(default_factory=AIData)
     opac_export: OPACExportData = Field(default_factory=OPACExportData)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     uploaded_by: Optional[str] = Field(None, description="User ID who uploaded the video")
     is_deleted: bool = Field(default=False, description="Soft-delete flag")
     deleted_at: Optional[datetime] = Field(None, description="When the record was soft-deleted")
+    publisher: Optional[str] = None
+    copyright: Optional[str] = None
+    description: Optional[str] = None
 
     class Config:
         populate_by_name = True  # Allows FastAPI to correctly read the _id from MongoDB
@@ -92,6 +116,15 @@ class VideoBulkCreate(BaseModel):
     description: Optional[str] = None
     date_recorded: Optional[datetime] = None
     perform_ai_processing: bool = True
+    conference_group: Optional[str] = Field(
+        None,
+        description="When set, created videos join this conference; part numbers assigned by client/order",
+    )
+    conference_part: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Optional part number for a single-URL bulk request",
+    )
 
 
 class VideoBulkItemResult(BaseModel):

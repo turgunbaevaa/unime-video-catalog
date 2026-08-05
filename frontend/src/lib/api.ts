@@ -33,6 +33,9 @@ export interface Video {
   uploaded_by?: string | null;
   is_deleted: boolean;
   deleted_at?: string | null;
+  publisher?: string | null;
+  copyright?: string | null;
+  description?: string | null;
   ai_processing?: AIProcessing;
   opac_export?: OpacExport;
 }
@@ -52,22 +55,33 @@ export interface VideoCreate {
   folder_id: string;
   conference_group?: string;
   conference_part?: number;
+  language?: string;
+  publisher?: string;
+  copyright?: string;
+  description?: string;
+  date_recorded?: string;
+  perform_ai_processing?: boolean;
 }
 
 export interface VideoUpdateInput {
   title?: string;
   authors?: string[];
-  date_recorded?: string;
+  date_recorded?: string | null;
   tags?: string[];
   azure_stream_url?: string;
   folder_id?: string;
   conference_group?: string | null;
   conference_part?: number | null;
   is_deleted?: boolean;
+  language?: string | null;
+  publisher?: string | null;
+  copyright?: string | null;
+  description?: string | null;
+  perform_ai_processing?: boolean;
 }
 
 /** Normalize env so both host-only and host+/api/v1 values resolve to .../api/v1 */
-export function normalizeApiBase(raw?: string): string {
+function normalizeApiBase(raw?: string): string {
   const fallback = "http://127.0.0.1:8000/api/v1";
   const value = (raw || fallback).trim().replace(/\/+$/, "");
   if (/\/api\/v1$/i.test(value)) {
@@ -78,15 +92,8 @@ export function normalizeApiBase(raw?: string): string {
 
 export const API_BASE = normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
 
-export {
-  ApiError,
-  apiFetch,
-  formatApiErrorDetail,
-  isAbortError,
-  isApiError,
-  isExpectedError,
-  throwIfNotOk,
-} from "@/src/lib/apiError";
+/** Re-export abort helper used by search UI. */
+export { isAbortError } from "@/src/lib/apiError";
 
 import {
   ApiError,
@@ -147,6 +154,8 @@ export interface VideoBulkCreateInput {
   description?: string;
   date_recorded?: string;
   perform_ai_processing?: boolean;
+  conference_group?: string;
+  conference_part?: number;
 }
 
 export interface VideoBulkItemResult {
@@ -176,7 +185,7 @@ export interface VideoBulkResponse {
   results: VideoBulkItemResult[];
 }
 
-export async function bulkCreateVideos(
+async function bulkCreateVideos(
   data: VideoBulkCreateInput,
   signal?: AbortSignal
 ): Promise<VideoBulkResponse> {
@@ -253,8 +262,17 @@ export async function bulkCreateVideosWithProgress(
       url: item.url,
     });
 
+    const conferencePart =
+      data.conference_group && data.conference_group.trim()
+        ? processedCreates + 1
+        : undefined;
+
     const partial = await bulkCreateVideos(
-      { ...data, urls: [item.url] },
+      {
+        ...data,
+        urls: [item.url],
+        conference_part: conferencePart,
+      },
       options?.signal
     );
     const row = partial.results[0];
