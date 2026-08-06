@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Query, Request, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Depends
 from typing import Optional, Any, List
 from app.models.video import (
     VideoCreate,
@@ -11,6 +11,7 @@ from app.models.video import (
     VideoBulkSummary,
 )
 from app.database import videos_collection, folders_collection
+from app.deps import verify_admin
 from bson import ObjectId
 from bson.errors import InvalidId
 from datetime import datetime
@@ -180,8 +181,6 @@ async def insert_video_record(
     conference_part: Optional[int] = None,
     perform_ai_processing: bool = True,
     language: Optional[str] = None,
-    publisher: Optional[str] = None,
-    copyright: Optional[str] = None,
     description: Optional[str] = None,
 ) -> dict:
     """Shared insert used by single create and bulk upload."""
@@ -206,10 +205,6 @@ async def insert_video_record(
         video_dict["conference_group"] = group
         if conference_part is not None:
             video_dict["conference_part"] = conference_part
-    if publisher:
-        video_dict["publisher"] = publisher
-    if copyright:
-        video_dict["copyright"] = copyright
     if description:
         video_dict["description"] = description
 
@@ -219,14 +214,6 @@ async def insert_video_record(
     created_video = await videos_collection.find_one({"_id": new_video.inserted_id})
     created_video["_id"] = str(created_video["_id"])
     return created_video
-
-
-# Administrator Verification Placeholder
-async def verify_admin(request: Request):
-    # auth_header = request.headers.get("Authorization")
-    # if not auth_header:
-    #     raise HTTPException(status_code=401, detail="Unauthorized")
-    pass
 
 
 @router.post("/", response_model=VideoResponse, status_code=status.HTTP_201_CREATED,
@@ -250,8 +237,6 @@ async def create_video(video: VideoCreate):
         conference_part=video_dict.get("conference_part"),
         perform_ai_processing=bool(video_dict.get("perform_ai_processing", True)),
         language=video_dict.get("language"),
-        publisher=video_dict.get("publisher"),
-        copyright=video_dict.get("copyright"),
         description=video_dict.get("description"),
     )
 
@@ -352,8 +337,6 @@ async def bulk_create_videos(payload: VideoBulkCreate):
                 conference_part=conference_part,
                 perform_ai_processing=payload.perform_ai_processing,
                 language=payload.language,
-                publisher=payload.publisher,
-                copyright=payload.copyright,
                 description=payload.description,
             )
             summary.created += 1
@@ -537,11 +520,10 @@ async def update_video(video_id: str, video: VideoUpdate):
         elif not perform and current_status in ("pending", "skipped"):
             update_data["ai_processing.status"] = "skipped"
 
-    for field in ("publisher", "copyright", "description"):
-        if field in update_data:
-            value = update_data.get(field)
-            if isinstance(value, str):
-                update_data[field] = value.strip() or None
+    if "description" in update_data:
+        value = update_data.get("description")
+        if isinstance(value, str):
+            update_data["description"] = value.strip() or None
 
     await videos_collection.update_one(
         {"_id": _to_object_id(video_id)}, {"$set": update_data}

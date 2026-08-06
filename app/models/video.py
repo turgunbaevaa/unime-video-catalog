@@ -46,8 +46,6 @@ class VideoCreate(BaseModel):
     )
     # Optional metadata (same fields as bulk upload)
     language: Optional[str] = None
-    publisher: Optional[str] = None
-    copyright: Optional[str] = None
     description: Optional[str] = None
     perform_ai_processing: bool = True
 
@@ -66,8 +64,6 @@ class VideoUpdate(BaseModel):
     conference_part: Optional[int] = Field(None, ge=1)
     # Optional metadata (same fields as create / bulk)
     language: Optional[str] = None
-    publisher: Optional[str] = None
-    copyright: Optional[str] = None
     description: Optional[str] = None
     perform_ai_processing: Optional[bool] = None
 
@@ -89,12 +85,11 @@ class VideoResponse(BaseModel):
     uploaded_by: Optional[str] = Field(None, description="User ID who uploaded the video")
     is_deleted: bool = Field(default=False, description="Soft-delete flag")
     deleted_at: Optional[datetime] = Field(None, description="When the record was soft-deleted")
-    publisher: Optional[str] = None
-    copyright: Optional[str] = None
     description: Optional[str] = None
 
     class Config:
         populate_by_name = True  # Allows FastAPI to correctly read the _id from MongoDB
+        # Legacy publisher/copyright keys on old Mongo docs are ignored
 
 
 class PaginatedVideoList(BaseModel):
@@ -111,8 +106,6 @@ class VideoBulkCreate(BaseModel):
     authors: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     language: Optional[str] = None
-    publisher: Optional[str] = None
-    copyright: Optional[str] = None
     description: Optional[str] = None
     date_recorded: Optional[datetime] = None
     perform_ai_processing: bool = True

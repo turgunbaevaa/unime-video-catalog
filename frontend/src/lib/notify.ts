@@ -5,7 +5,7 @@ import {
   isExpectedError,
 } from "@/src/lib/apiError";
 
-export type ToastType = "success" | "error" | "warning" | "info";
+export type ToastType = "success" | "error" | "warning";
 
 export interface ToastItem {
   id: string;
@@ -15,7 +15,7 @@ export interface ToastItem {
   duration: number;
 }
 
-export type ToastInput = {
+type ToastInput = {
   type: ToastType;
   message: string;
   title?: string;
@@ -26,7 +26,6 @@ type ToastListener = (toasts: ToastItem[]) => void;
 
 const DEFAULT_DURATION: Record<ToastType, number> = {
   success: 3500,
-  info: 3500,
   warning: 4500,
   error: 5000,
 };
@@ -64,7 +63,7 @@ export function dismissToast(id: string) {
   notifyListeners();
 }
 
-export function pushToast(input: ToastInput): string {
+function pushToast(input: ToastInput): string {
   const message = (input.message || "").trim() || "An unexpected error occurred.";
   const type = input.type;
   const id = nextId();

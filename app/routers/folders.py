@@ -1,22 +1,17 @@
-from fastapi import APIRouter, HTTPException, status, Query, Request, Depends
+from fastapi import APIRouter, HTTPException, status, Query, Depends
 from datetime import datetime
+from typing import Optional
+import re
 from bson import ObjectId
 from bson.errors import InvalidId
 from app.database import folders_collection, videos_collection
 from app.models.folder import FolderCreate, FolderUpdate, FolderList
+from app.deps import verify_admin
 
 router = APIRouter(
     prefix="/api/v1/folders",
     tags=["Folders"]
 )
-
-# Administrator Verification Placeholder
-# In the future, uncomment the code inside to validate the token.
-async def verify_admin(request: Request):
-    # auth_header = request.headers.get("Authorization")
-    # if not auth_header:
-    #     raise HTTPException(status_code=401, detail="Unauthorized")
-    pass
 
 
 def _as_folder_id_str(folder: dict) -> str:
@@ -127,15 +122,25 @@ async def get_folders(
         include_deleted: bool = False,
         only_deleted: bool = False,
         page: int = Query(1, ge=1, description="Page number"),
-        limit: int = Query(12, ge=1, le=100, description="Number of items per page")
+        limit: int = Query(12, ge=1, le=100, description="Number of items per page"),
+        q: Optional[str] = Query(None, description="Search query string"),
 ):
     """Get all folders with pagination and archive filtering"""
     if only_deleted:
-        query = {"is_deleted": True}
+        query: dict = {"is_deleted": True}
     elif include_deleted:
         query = {}
     else:
         query = {"is_deleted": {"$ne": True}}
+
+    if q:
+        query_text = q.strip()
+        if query_text:
+            search_regex = {"$regex": re.escape(query_text), "$options": "i"}
+            query["$or"] = [
+                {"name": search_regex},
+                {"description": search_regex},
+            ]
 
     total_count = await folders_collection.count_documents(query)
     skip = (page - 1) * limit

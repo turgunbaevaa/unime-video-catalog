@@ -8,7 +8,7 @@ type UserWithRole = {
   role?: string;
 };
 
-export const authOptions: NextAuthOptions = {
+const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: "Development Login",

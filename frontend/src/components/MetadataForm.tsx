@@ -1,18 +1,13 @@
 "use client";
 
-import { useId, useState } from "react";
 import type { Video } from "@/src/lib/api";
-
-const inputClass =
-  "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-colors text-sm";
+import { FORM_INPUT_CLASS } from "@/src/lib/formStyles";
 
 export type MetadataFormValues = {
   authors: string;
   tags: string;
   language: string;
   dateRecorded: string;
-  publisher: string;
-  copyright: string;
   description: string;
   performAi: boolean;
 };
@@ -22,8 +17,6 @@ export const emptyMetadataValues = (): MetadataFormValues => ({
   tags: "",
   language: "",
   dateRecorded: "",
-  publisher: "",
-  copyright: "",
   description: "",
   performAi: true,
 });
@@ -40,7 +33,7 @@ export function todayISODate(): string {
 }
 
 /** Convert an ISO datetime (or date) string to yyyy-mm-dd for date inputs. */
-export function toDateInputValue(value?: string | null): string {
+function toDateInputValue(value?: string | null): string {
   if (!value) return "";
   const trimmed = value.trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
@@ -59,8 +52,6 @@ export function metadataValuesFromVideo(video: Video): MetadataFormValues {
     tags: (video.tags ?? []).join(", "),
     language: video.ai_processing?.language?.trim() || "",
     dateRecorded: toDateInputValue(video.date_recorded),
-    publisher: video.publisher?.trim() || "",
-    copyright: video.copyright?.trim() || "",
     description: video.description?.trim() || "",
     performAi: status !== "skipped",
   };
@@ -99,11 +90,6 @@ export default function MetadataForm({
   mode = "create",
   maxDate = todayISODate(),
 }: MetadataFormProps) {
-  const panelId = useId();
-  const hasAdditional =
-    Boolean(values.publisher.trim()) || Boolean(values.copyright.trim());
-  const [additionalOpen, setAdditionalOpen] = useState(hasAdditional);
-
   return (
     <div className="space-y-5">
       <div>
@@ -121,7 +107,7 @@ export default function MetadataForm({
               ? "Comma-separated names (applied to all imported videos)"
               : "Comma-separated names"
           }
-          className={inputClass}
+          className={FORM_INPUT_CLASS}
         />
       </div>
 
@@ -136,7 +122,7 @@ export default function MetadataForm({
           onChange={(e) => onChange({ tags: e.target.value })}
           disabled={disabled}
           placeholder="Comma-separated tags"
-          className={inputClass}
+          className={FORM_INPUT_CLASS}
         />
       </div>
 
@@ -152,7 +138,7 @@ export default function MetadataForm({
             onChange={(e) => onChange({ language: e.target.value })}
             disabled={disabled}
             placeholder="e.g. en, it"
-            className={inputClass}
+            className={FORM_INPUT_CLASS}
           />
         </div>
         <div>
@@ -169,7 +155,7 @@ export default function MetadataForm({
             max={maxDate}
             onChange={(e) => onChange({ dateRecorded: e.target.value })}
             disabled={disabled}
-            className={inputClass}
+            className={FORM_INPUT_CLASS}
           />
         </div>
       </div>
@@ -184,7 +170,7 @@ export default function MetadataForm({
           value={values.description}
           onChange={(e) => onChange({ description: e.target.value })}
           disabled={disabled}
-          className={`${inputClass} resize-none`}
+          className={`${FORM_INPUT_CLASS} resize-none`}
         />
       </div>
 
@@ -200,77 +186,6 @@ export default function MetadataForm({
           ? "Perform AI processing (pending when enabled; skipped when disabled)"
           : "Perform AI processing (marks videos as pending for transcription)"}
       </label>
-
-      <div className="border border-gray-200 rounded-lg">
-        <button
-          type="button"
-          id={`${panelId}-trigger`}
-          aria-expanded={additionalOpen}
-          aria-controls={`${panelId}-panel`}
-          disabled={disabled}
-          onClick={() => setAdditionalOpen((open) => !open)}
-          className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-gray-50 rounded-lg disabled:opacity-50 cursor-pointer"
-        >
-          <span>Additional metadata (optional)</span>
-          <svg
-            className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${
-              additionalOpen ? "rotate-180" : ""
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
-        </button>
-        {additionalOpen && (
-          <div
-            id={`${panelId}-panel`}
-            role="region"
-            aria-labelledby={`${panelId}-trigger`}
-            className="space-y-5 px-4 pb-4 border-t border-gray-100 pt-4"
-          >
-            <div>
-              <label
-                htmlFor="meta-publisher"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                Publisher
-              </label>
-              <input
-                id="meta-publisher"
-                type="text"
-                value={values.publisher}
-                onChange={(e) => onChange({ publisher: e.target.value })}
-                disabled={disabled}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="meta-copyright"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                Copyright
-              </label>
-              <input
-                id="meta-copyright"
-                type="text"
-                value={values.copyright}
-                onChange={(e) => onChange({ copyright: e.target.value })}
-                disabled={disabled}
-                className={inputClass}
-              />
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -19,9 +19,9 @@ import MetadataForm, {
   todayISODate,
   type MetadataFormValues,
 } from "@/src/components/MetadataForm";
+import { FORM_INPUT_CLASS } from "@/src/lib/formStyles";
 
-const inputClass =
-  "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-colors text-sm";
+const inputClass = FORM_INPUT_CLASS;
 
 export default function EditVideoPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -148,14 +148,6 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
 
       if (meta.description.trim() !== initialMeta.description.trim()) {
         updatedFields.description = meta.description.trim() || null;
-      }
-
-      if (meta.publisher.trim() !== initialMeta.publisher.trim()) {
-        updatedFields.publisher = meta.publisher.trim() || null;
-      }
-
-      if (meta.copyright.trim() !== initialMeta.copyright.trim()) {
-        updatedFields.copyright = meta.copyright.trim() || null;
       }
 
       if (meta.performAi !== initialMeta.performAi) {

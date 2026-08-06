@@ -1,10 +1,10 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { searchCatalog, isAbortError, Video, Folder } from "@/src/lib/api";
-import { handleClientError } from "@/src/lib/notify";
+import { getErrorMessage } from "@/src/lib/notify";
 
 function parsePage(raw: string | null): number {
   const value = Number(raw);
@@ -12,7 +12,34 @@ function parsePage(raw: string | null): number {
   return Math.floor(value);
 }
 
+function SearchSpinner() {
+  return (
+    <svg
+      className="h-4 w-4 animate-spin text-slate-400"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  );
+}
+
 function SearchResultsContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const q = (searchParams.get("q") || "").trim();
   const page = parsePage(searchParams.get("page"));
@@ -23,6 +50,14 @@ function SearchResultsContent() {
   const [totalFolders, setTotalFolders] = useState(0);
   const [totalVideos, setTotalVideos] = useState(0);
   const [isLoading, setIsLoading] = useState(Boolean(q));
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Empty query → return to catalog (SearchBar also does this; belt-and-suspenders)
+  useEffect(() => {
+    if (!q) {
+      router.replace("/");
+    }
+  }, [q, router]);
 
   useEffect(() => {
     if (!q) return;
@@ -32,8 +67,7 @@ function SearchResultsContent() {
 
     const fetchResults = async () => {
       setIsLoading(true);
-      setFolders([]);
-      setVideos([]);
+      setErrorMessage(null);
 
       try {
         const data = await searchCatalog(q, page, limit, controller.signal);
@@ -48,7 +82,9 @@ function SearchResultsContent() {
         setVideos([]);
         setTotalFolders(0);
         setTotalVideos(0);
-        handleClientError(err, "Search results could not be loaded. Please try again.");
+        setErrorMessage(
+          getErrorMessage(err, "Search results could not be loaded. Please try again.")
+        );
       } finally {
         if (!cancelled && !controller.signal.aborted) {
           setIsLoading(false);
@@ -64,79 +100,87 @@ function SearchResultsContent() {
     };
   }, [q, page]);
 
-  // Derive empty-query view from the URL so we don't need a clearing effect.
-  const visibleFolders = q ? folders : [];
-  const visibleVideos = q ? videos : [];
-  const visibleTotalFolders = q ? totalFolders : 0;
-  const visibleTotalVideos = q ? totalVideos : 0;
-  const visibleLoading = Boolean(q) && isLoading;
-
-  const totalHits = visibleTotalFolders + visibleTotalVideos;
-  const totalPages = Math.max(
-    Math.ceil(visibleTotalFolders / limit) || 0,
-    Math.ceil(visibleTotalVideos / limit) || 0,
-    1
-  );
-  const pageOutOfRange =
-    !visibleLoading &&
-    q.length > 0 &&
-    totalHits > 0 &&
-    page > totalPages;
-  const pageEmpty =
-    !visibleLoading &&
-    q.length > 0 &&
-    totalHits > 0 &&
-    visibleFolders.length === 0 &&
-    visibleVideos.length === 0;
-  const showPagination =
-    !visibleLoading &&
-    q.length > 0 &&
-    totalHits > 0 &&
-    totalPages > 1;
-
-  const resultsHref = (nextPage: number) =>
-    `/search?q=${encodeURIComponent(q)}&page=${nextPage}`;
-
-  if (visibleLoading) {
+  if (!q) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">
-        Searching...
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500 text-sm">
+        Returning to catalog…
       </div>
     );
   }
+
+  const totalHits = totalFolders + totalVideos;
+  const totalPages = Math.max(
+    Math.ceil(totalFolders / limit) || 0,
+    Math.ceil(totalVideos / limit) || 0,
+    1
+  );
+  const pageOutOfRange =
+    !isLoading && !errorMessage && totalHits > 0 && page > totalPages;
+  const pageEmpty =
+    !isLoading &&
+    !errorMessage &&
+    totalHits > 0 &&
+    folders.length === 0 &&
+    videos.length === 0;
+  const showPagination =
+    !isLoading && !errorMessage && totalHits > 0 && totalPages > 1 && !pageOutOfRange;
+
+  const resultsHref = (nextPage: number) =>
+    `/search?q=${encodeURIComponent(q)}&page=${nextPage}`;
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 py-12">
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8 border-b border-gray-200 pb-6">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Search Results</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+              Search Results
+            </h1>
+            {isLoading && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                <SearchSpinner />
+                Searching…
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-500 mt-2">
-            {q ? (
+            {isLoading && totalHits === 0 && !errorMessage ? (
+              <>Looking for results for <span className="font-semibold text-slate-900">&quot;{q}&quot;</span></>
+            ) : errorMessage ? (
+              <>Could not complete search for <span className="font-semibold text-slate-900">&quot;{q}&quot;</span></>
+            ) : (
               <>
                 Found {totalHits} {totalHits === 1 ? "result" : "results"} for{" "}
                 <span className="font-semibold text-slate-900">&quot;{q}&quot;</span>
                 {totalHits > 0 && (
                   <span className="text-gray-400">
                     {" "}
-                    ({visibleTotalFolders}{" "}
-                    {visibleTotalFolders === 1 ? "folder" : "folders"}, {visibleTotalVideos}{" "}
-                    {visibleTotalVideos === 1 ? "video" : "videos"})
+                    ({totalFolders} {totalFolders === 1 ? "folder" : "folders"},{" "}
+                    {totalVideos} {totalVideos === 1 ? "video" : "videos"})
                   </span>
                 )}
               </>
-            ) : (
-              "Enter a search query to find folders and videos."
             )}
           </p>
         </div>
 
-        {(!q || totalHits === 0) && !visibleLoading ? (
+        {errorMessage ? (
+          <div className="text-center py-16 bg-white border border-red-100 rounded-2xl shadow-sm px-6">
+            <h3 className="text-lg font-medium text-slate-900 mb-2">Search failed</h3>
+            <p className="text-sm text-red-600 max-w-md mx-auto">{errorMessage}</p>
+          </div>
+        ) : isLoading && totalHits === 0 ? (
+          <div className="text-center py-20 bg-white border border-gray-200 rounded-2xl shadow-sm">
+            <div className="inline-flex items-center gap-2 text-sm text-gray-500">
+              <SearchSpinner />
+              Searching…
+            </div>
+          </div>
+        ) : totalHits === 0 ? (
           <div className="text-center py-20 bg-white border border-gray-200 rounded-2xl shadow-sm">
             <h3 className="text-lg font-medium text-slate-900 mb-2">No results found</h3>
             <p className="text-sm text-gray-500">
-              {q
-                ? "Try adjusting your search query or check for typos."
-                : "Use the search bar above to look for folders, titles, authors, or tags."}
+              Try adjusting your search query or check for typos.
             </p>
           </div>
         ) : pageEmpty || pageOutOfRange ? (
@@ -153,12 +197,12 @@ function SearchResultsContent() {
             </Link>
           </div>
         ) : (
-          <>
-            {visibleFolders.length > 0 && (
+          <div className={isLoading ? "opacity-60 transition-opacity" : undefined}>
+            {folders.length > 0 && (
               <section className="mb-12" aria-label="Folder results">
                 <h2 className="text-lg font-semibold text-slate-900 mb-4">Folders</h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  {visibleFolders.map((folder) => (
+                  {folders.map((folder) => (
                     <Link
                       key={folder._id}
                       href={`/folders/${folder._id}`}
@@ -185,11 +229,11 @@ function SearchResultsContent() {
               </section>
             )}
 
-            {visibleVideos.length > 0 && (
+            {videos.length > 0 && (
               <section aria-label="Video results">
                 <h2 className="text-lg font-semibold text-slate-900 mb-4">Videos</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {visibleVideos.map((video) => (
+                  {videos.map((video) => (
                     <div
                       key={video._id}
                       className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col"
@@ -245,10 +289,10 @@ function SearchResultsContent() {
                 </div>
               </section>
             )}
-          </>
+          </div>
         )}
 
-        {showPagination && !pageOutOfRange && (
+        {showPagination && (
           <nav
             className="flex justify-center items-center space-x-4 mt-12 mb-8"
             aria-label="Search pagination"
@@ -297,7 +341,14 @@ function SearchResultsContent() {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<div className="text-center py-20">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-500 gap-2">
+          <SearchSpinner />
+          Loading…
+        </div>
+      }
+    >
       <SearchResultsContent />
     </Suspense>
   );

@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { getVideos, getFolderById, deleteVideo, deleteFolder, updateVideo, updateFolder, getFolders, Video, Folder } from "@/src/lib/api";
-import { handleClientError, showSuccess, showWarning } from "@/src/lib/notify";
+import { getErrorMessage, handleClientError, showSuccess, showWarning } from "@/src/lib/notify";
 import {
   DisplayItem,
   groupVideosByConference,
@@ -12,6 +12,8 @@ import {
   setConferenceActivePart,
 } from "@/src/lib/conferenceGrouping";
 import { useSession } from "next-auth/react";
+import { useLiveSearchQuery } from "@/src/hooks/useLiveSearchQuery";
+import LiveSearchField from "@/src/components/LiveSearchField";
 
 function FolderContent() {
   const params = useParams();
@@ -30,8 +32,10 @@ function FolderContent() {
   const [folder, setFolder] = useState<Folder | null>(null);
   const [displayItems, setDisplayItems] = useState<DisplayItem[]>([]);
   const [totalPages, setTotalPages] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
-  const [folderSearch, setFolderSearch] = useState(qParam);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [isListLoading, setIsListLoading] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
 
   const [isEditFolderOpen, setIsEditFolderOpen] = useState(false);
   const [editName, setEditName] = useState("");
@@ -55,15 +59,66 @@ function FolderContent() {
 
   const [folderDeleteError, setFolderDeleteError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setFolderSearch(qParam);
-  }, [qParam]);
+  const buildFolderQuery = useCallback(
+    (overrides: { page?: number; sort?: string; q?: string }) => {
+      const params = new URLSearchParams();
+      const page = overrides.page ?? currentPage;
+      const sort = overrides.sort ?? sortParam;
+      const q = overrides.q !== undefined ? overrides.q : qParam;
+      if (page > 1) params.set("page", String(page));
+      if (sort && sort !== "created_at_desc") params.set("sort", sort);
+      if (q.trim()) params.set("q", q.trim());
+      const qs = params.toString();
+      return qs ? `/folders/${folderId}?${qs}` : `/folders/${folderId}`;
+    },
+    [currentPage, sortParam, qParam, folderId]
+  );
+
+  const commitSearch = useCallback(
+    (trimmed: string) => {
+      router.replace(buildFolderQuery({ page: 1, q: trimmed }));
+    },
+    [router, buildFolderQuery]
+  );
+
+  const {
+    query: folderSearch,
+    setQuery: setFolderSearch,
+    clear: clearFolderSearch,
+  } = useLiveSearchQuery(qParam, commitSearch);
+
+  const reloadVideos = useCallback(async () => {
+    if (!folder) return;
+    const isArchived = folder.is_deleted ? true : undefined;
+    const data = await getVideos(
+      false,
+      currentPage,
+      limit,
+      folderId,
+      isArchived,
+      qParam || undefined,
+      sortParam
+    );
+    setDisplayItems(groupVideosByConference(data.items));
+    setTotalPages(Math.ceil(data.total_count / limit) || 1);
+    setTotalCount(data.total_count);
+  }, [folder, currentPage, limit, folderId, qParam, sortParam]);
 
   useEffect(() => {
-    const loadFolderAndVideos = async () => {
+    let cancelled = false;
+
+    const load = async () => {
       try {
-        setIsLoading(true);
+        setListError(null);
+        const knownFolder = folder && folder._id === folderId;
+        if (!knownFolder) {
+          setIsBootstrapping(true);
+        } else {
+          setIsListLoading(true);
+        }
+
         const folderData = await getFolderById(folderId);
+        if (cancelled) return;
         setFolder(folderData);
 
         const isArchived = folderData.is_deleted ? true : undefined;
@@ -76,40 +131,44 @@ function FolderContent() {
           qParam || undefined,
           sortParam
         );
+        if (cancelled) return;
 
         setDisplayItems(groupVideosByConference(videosData.items));
         setTotalPages(Math.ceil(videosData.total_count / limit) || 1);
+        setTotalCount(videosData.total_count);
       } catch (error) {
-        handleClientError(error, "This folder could not be loaded.");
+        if (cancelled) return;
+        const knownFolder = folder && folder._id === folderId;
+        if (!knownFolder) {
+          handleClientError(error, "This folder could not be loaded.");
+        } else {
+          setListError(
+            getErrorMessage(error, "Videos could not be loaded. Please try again.")
+          );
+          setDisplayItems([]);
+          setTotalCount(0);
+          setTotalPages(1);
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsBootstrapping(false);
+          setIsListLoading(false);
+        }
       }
     };
 
     if (folderId) {
-      loadFolderAndVideos();
+      void load();
     }
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh list on query params; folder used for loading mode only
   }, [folderId, currentPage, sortParam, qParam]);
 
-  const buildFolderQuery = (overrides: { page?: number; sort?: string; q?: string }) => {
-    const params = new URLSearchParams();
-    const page = overrides.page ?? currentPage;
-    const sort = overrides.sort ?? sortParam;
-    const q = overrides.q ?? qParam;
-    if (page > 1) params.set("page", String(page));
-    if (sort && sort !== "created_at_desc") params.set("sort", sort);
-    if (q.trim()) params.set("q", q.trim());
-    const qs = params.toString();
-    return qs ? `/folders/${folderId}?${qs}` : `/folders/${folderId}`;
-  };
-
   const handleSortChange = (value: string) => {
-    router.push(buildFolderQuery({ page: 1, sort: value }));
-  };
-
-  const handleFolderSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    router.push(buildFolderQuery({ page: 1, q: folderSearch }));
+    router.replace(buildFolderQuery({ page: 1, sort: value }));
   };
 
   const openEditFolder = () => {
@@ -156,21 +215,7 @@ function FolderContent() {
       await Promise.all(
         videoIds.map(id => deleteVideo(id, type === 'permanent'))
       );
-
-      const isArchived = folder?.is_deleted ? true : undefined;
-      const data = await getVideos(
-        false,
-        currentPage,
-        limit,
-        folderId,
-        isArchived,
-        qParam || undefined,
-        sortParam
-      );
-
-      setDisplayItems(groupVideosByConference(data.items));
-      setTotalPages(Math.ceil(data.total_count / limit));
-
+      await reloadVideos();
       setDeleteModal({ isOpen: false, videoIds: [], type: null });
       showSuccess(deleteModal.type === "permanent" ? "Video permanently deleted." : "Video archived.");
     } catch (error) {
@@ -207,17 +252,7 @@ function FolderContent() {
       await Promise.all(
         restoreModal.videoIds.map(id => updateVideo(id, { is_deleted: false, folder_id: selectedFolderId }))
       );
-      const isArchived = folder?.is_deleted ? true : undefined;
-      const data = await getVideos(
-        false,
-        currentPage,
-        limit,
-        folderId,
-        isArchived,
-        qParam || undefined,
-        sortParam
-      );
-      setDisplayItems(groupVideosByConference(data.items));
+      await reloadVideos();
       setRestoreModal({ isOpen: false, videoIds: [] });
       showSuccess("Video restored.");
     } catch (error) {
@@ -245,7 +280,7 @@ function FolderContent() {
   };
 
 
-  if (isLoading) {
+  if (isBootstrapping || !folder) {
     return <div className="min-h-screen bg-gray-50 text-center py-20 text-gray-500">Loading workspace...</div>;
   }
 
@@ -333,29 +368,15 @@ function FolderContent() {
         )}
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-8">
-          <form onSubmit={handleFolderSearch} className="flex-1 flex gap-2">
-            <input
-              type="search"
+          <div className="flex-1 flex gap-2 items-center">
+            <LiveSearchField
               value={folderSearch}
-              onChange={(e) => setFolderSearch(e.target.value)}
+              onChange={setFolderSearch}
+              onClear={clearFolderSearch}
               placeholder="Search videos in this folder..."
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none"
+              isSearching={isListLoading}
             />
-            <button
-              type="submit"
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Search
-            </button>
-            {qParam && (
-              <Link
-                href={buildFolderQuery({ page: 1, q: "" })}
-                className="px-3 py-2 text-sm font-medium text-gray-500 hover:text-slate-800"
-              >
-                Clear
-              </Link>
-            )}
-          </form>
+          </div>
           <div className="flex items-center gap-2">
             <label htmlFor="folder-sort" className="text-sm text-gray-500 whitespace-nowrap">
               Sort
@@ -373,13 +394,20 @@ function FolderContent() {
             </select>
           </div>
           <p className="text-xs text-gray-400 sm:ml-auto">
-            {folder.video_count ?? displayItems.length}{" "}
-            {(folder.video_count ?? displayItems.length) === 1 ? "video" : "videos"}
+            {qParam ? totalCount : (folder.video_count ?? totalCount)}{" "}
+            {(qParam ? totalCount : (folder.video_count ?? totalCount)) === 1
+              ? "video"
+              : "videos"}
             {qParam ? " matching" : ""}
           </p>
         </div>
 
-        {displayItems.length === 0 ? (
+        {listError ? (
+          <div className="text-center py-16 bg-white border border-red-100 rounded-2xl shadow-sm px-6">
+            <h3 className="text-lg font-medium text-slate-900 mb-2">Search failed</h3>
+            <p className="text-sm text-red-600 max-w-md mx-auto">{listError}</p>
+          </div>
+        ) : displayItems.length === 0 && !isListLoading ? (
           <div className="flex flex-col items-center justify-center py-24 px-4 bg-white border border-gray-200 border-dashed rounded-2xl shadow-sm">
             <div className="w-16 h-16 mb-5 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center border border-gray-100">
               <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -403,8 +431,10 @@ function FolderContent() {
               </Link>
             )}
           </div>
+        ) : displayItems.length === 0 && isListLoading ? (
+          <div className="text-center py-20 text-sm text-gray-500">Searching…</div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
+          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 ${isListLoading ? "opacity-60 transition-opacity" : ""}`}>
             {displayItems.map((item) => {
               if (isConferenceItem(item)) {
                 const safeIndex = Math.min(item.activePartIndex, Math.max(0, item.videos.length - 1));
@@ -575,7 +605,7 @@ function FolderContent() {
           </div>
         )}
 
-        {!isLoading && totalPages > 1 && (
+        {!listError && totalPages > 1 && (
           <div className="flex justify-center items-center space-x-4 mt-12 mb-8">
             {currentPage > 1 ? (
               <Link href={buildFolderQuery({ page: currentPage - 1 })} className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm">

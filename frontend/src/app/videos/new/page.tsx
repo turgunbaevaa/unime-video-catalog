@@ -18,13 +18,13 @@ import MetadataForm, {
   todayISODate,
   type MetadataFormValues,
 } from "@/src/components/MetadataForm";
+import { FORM_INPUT_CLASS } from "@/src/lib/formStyles";
 
 type UploadMode = "single" | "bulk";
 
 const FAILED_PREVIEW_LIMIT = 3;
 
-const inputClass =
-  "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none transition-colors text-sm";
+const inputClass = FORM_INPUT_CLASS;
 
 type FailedImportItem = {
   url: string;
@@ -200,8 +200,6 @@ function NewVideoContent() {
     tags: "",
     language: "",
     dateRecorded: "",
-    publisher: "",
-    copyright: "",
     description: "",
     performAi: true,
   });
@@ -259,8 +257,6 @@ function NewVideoContent() {
     authors: parseAuthors(),
     tags: parseTags(),
     language: meta.language.trim() || undefined,
-    publisher: meta.publisher.trim() || undefined,
-    copyright: meta.copyright.trim() || undefined,
     description: meta.description.trim() || undefined,
     date_recorded: meta.dateRecorded
       ? new Date(meta.dateRecorded).toISOString()

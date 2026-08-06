@@ -33,8 +33,6 @@ export interface Video {
   uploaded_by?: string | null;
   is_deleted: boolean;
   deleted_at?: string | null;
-  publisher?: string | null;
-  copyright?: string | null;
   description?: string | null;
   ai_processing?: AIProcessing;
   opac_export?: OpacExport;
@@ -56,8 +54,6 @@ export interface VideoCreate {
   conference_group?: string;
   conference_part?: number;
   language?: string;
-  publisher?: string;
-  copyright?: string;
   description?: string;
   date_recorded?: string;
   perform_ai_processing?: boolean;
@@ -74,8 +70,6 @@ export interface VideoUpdateInput {
   conference_part?: number | null;
   is_deleted?: boolean;
   language?: string | null;
-  publisher?: string | null;
-  copyright?: string | null;
   description?: string | null;
   perform_ai_processing?: boolean;
 }
@@ -149,8 +143,6 @@ export interface VideoBulkCreateInput {
   authors?: string[];
   tags?: string[];
   language?: string;
-  publisher?: string;
-  copyright?: string;
   description?: string;
   date_recorded?: string;
   perform_ai_processing?: boolean;
@@ -388,14 +380,16 @@ export async function searchCatalog(
 export async function getFolders(
   page: number = 1,
   limit: number = 15,
-  onlyDeleted: boolean = false
+  onlyDeleted: boolean = false,
+  searchQ?: string
 ): Promise<FolderListResponse> {
-  const res = await apiFetch(
-    `${API_BASE}/folders/?page=${page}&limit=${limit}&only_deleted=${onlyDeleted}`,
-    {
-      cache: "no-store",
-    }
-  );
+  let url = `${API_BASE}/folders/?page=${page}&limit=${limit}&only_deleted=${onlyDeleted}`;
+  if (searchQ?.trim()) {
+    url += `&q=${encodeURIComponent(searchQ.trim())}`;
+  }
+  const res = await apiFetch(url, {
+    cache: "no-store",
+  });
   await throwIfNotOk(res, "The folder list could not be loaded.");
   return res.json();
 }

@@ -1,79 +1,113 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getVideos, updateVideo, deleteVideo, getFolders, updateFolder, deleteFolder, Video, Folder } from "@/src/lib/api";
-import { handleClientError, showSuccess, showWarning } from "@/src/lib/notify";
+import { getErrorMessage, handleClientError, showSuccess, showWarning } from "@/src/lib/notify";
 import {
   DisplayItem,
   groupVideosByConference,
   isConferenceItem,
   setConferenceActivePart,
 } from "@/src/lib/conferenceGrouping";
+import { useLiveSearchQuery } from "@/src/hooks/useLiveSearchQuery";
+import LiveSearchField from "@/src/components/LiveSearchField";
+
+function buildArchiveHref(
+  overrides: { page?: number; q?: string },
+  current: { page: number; q: string }
+) {
+  const params = new URLSearchParams();
+  const page = overrides.page ?? current.page;
+  const q = overrides.q !== undefined ? overrides.q : current.q;
+  if (page > 1) params.set("page", String(page));
+  if (q.trim()) params.set("q", q.trim());
+  const qs = params.toString();
+  return qs ? `/videos/archive?${qs}` : "/videos/archive";
+}
 
 function ArchiveContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const currentPage = Number(searchParams.get("page")) || 1;
+  const qParam = searchParams.get("q") || "";
   const limit = 12;
 
-  // --- STATES FOR VIDEOS ---
   const [displayItems, setDisplayItems] = useState<DisplayItem[]>([]);
   const [totalPages, setTotalPages] = useState(1);
-  
-  // --- STATES FOR FOLDERS ---
   const [deletedFolders, setDeletedFolders] = useState<Folder[]>([]);
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [isListLoading, setIsListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
   const [activeFolders, setActiveFolders] = useState<Folder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("");
 
-  // Modals for Videos
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; videoIds: string[]; }>({ isOpen: false, videoIds: [] });
   const [restoreModal, setRestoreModal] = useState<{ isOpen: boolean; videoIds: string[]; }>({ isOpen: false, videoIds: [] });
-
-  // Modals for Folders
   const [folderDeleteModal, setFolderDeleteModal] = useState<{ isOpen: boolean; folderId: string | null; }>({ isOpen: false, folderId: null });
-  
   const [folderDeleteError, setFolderDeleteError] = useState<string | null>(null);
 
-  // --- LOGIC FOR VIDEOS ---
+  const commitSearch = useCallback(
+    (trimmed: string) => {
+      router.replace(buildArchiveHref({ page: 1, q: trimmed }, { page: currentPage, q: qParam }));
+    },
+    [router, currentPage, qParam]
+  );
+
+  const {
+    query: archiveSearch,
+    setQuery: setArchiveSearch,
+    clear: clearArchiveSearch,
+  } = useLiveSearchQuery(qParam, commitSearch);
+
   const handleConferencePartChange = (conferenceGroup: string, newIndex: number) => {
     setDisplayItems((prevItems) =>
       setConferenceActivePart(prevItems, conferenceGroup, newIndex)
     );
   };
 
-  // --- FETCH ALL ARCHIVE DATA ---
-  const fetchArchiveData = async () => {
+  const fetchArchiveData = useCallback(async () => {
     try {
-      setIsLoading(true);
-      
-      const [videosData, foldersData] = await Promise.all([
-        getVideos(false, currentPage, limit, undefined, true),
-        getFolders(1, 100, true) 
+      setListError(null);
+      setIsListLoading(true);
+
+      const trimmedQ = qParam.trim() || undefined;
+
+      const [videosData, matchedFoldersData, membershipFoldersData] = await Promise.all([
+        getVideos(false, currentPage, limit, undefined, true, trimmedQ),
+        getFolders(1, 100, true, trimmedQ),
+        trimmedQ ? getFolders(1, 100, true) : Promise.resolve(null),
       ]);
-      
-      setDeletedFolders(foldersData.items);
 
+      const membershipFolders = membershipFoldersData?.items ?? matchedFoldersData.items;
+      setDeletedFolders(matchedFoldersData.items);
+
+      const archivedFolderIds = new Set(membershipFolders.map((f: Folder) => f._id));
       const standaloneDeletedVideos = videosData.items.filter(
-        (video: Video) => !foldersData.items.some((f: Folder) => f._id === video.folder_id)
+        (video: Video) => !archivedFolderIds.has(video.folder_id)
       );
-      
-      setDisplayItems(groupVideosByConference(standaloneDeletedVideos));
-      setTotalPages(Math.ceil(videosData.total_count / limit));
 
+      setDisplayItems(groupVideosByConference(standaloneDeletedVideos));
+      setTotalPages(Math.ceil(videosData.total_count / limit) || 1);
     } catch (error) {
-      handleClientError(error, "The folder list could not be loaded.");
+      setDeletedFolders([]);
+      setDisplayItems([]);
+      setTotalPages(1);
+      setListError(
+        getErrorMessage(error, "Archive results could not be loaded. Please try again.")
+      );
     } finally {
-      setIsLoading(false);
+      setIsListLoading(false);
+      setHasLoadedOnce(true);
     }
-  };
+  }, [currentPage, limit, qParam]);
 
   useEffect(() => {
-    fetchArchiveData();
-  }, [currentPage]);
+    void fetchArchiveData();
+  }, [fetchArchiveData]);
 
   // --- ACTIONS FOR VIDEOS ---
   const confirmRestore = async (ids: string[]) => {
@@ -170,10 +204,24 @@ function ArchiveContent() {
 
       {/* --- MAIN CONTENT --- */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        
-        {isLoading ? (
+        <div className="mb-8 max-w-xl">
+          <LiveSearchField
+            value={archiveSearch}
+            onChange={setArchiveSearch}
+            onClear={clearArchiveSearch}
+            placeholder="Search archived folders and videos..."
+            isSearching={isListLoading}
+          />
+        </div>
+
+        {!hasLoadedOnce ? (
           <div className="text-center py-20 text-gray-500">Loading archive...</div>
-        ) : displayItems.length === 0 && deletedFolders.length === 0 ? (
+        ) : listError ? (
+          <div className="text-center py-16 bg-white border border-red-100 rounded-2xl shadow-sm px-6">
+            <h3 className="text-lg font-medium text-slate-900 mb-2">Search failed</h3>
+            <p className="text-sm text-red-600 max-w-md mx-auto">{listError}</p>
+          </div>
+        ) : displayItems.length === 0 && deletedFolders.length === 0 && !isListLoading ? (
           
           /* EMPTY STATE */
           <div className="flex flex-col items-center justify-center py-24 px-4 bg-white border border-gray-200 border-dashed rounded-2xl shadow-sm">
@@ -182,17 +230,25 @@ function ArchiveContent() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
               </svg>
             </div>
-            <h3 className="text-lg font-medium text-slate-900 mb-2">Archive is empty</h3>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">
+              {qParam ? "No matching archive items" : "Archive is empty"}
+            </h3>
             <p className="text-sm text-gray-500 text-center max-w-sm mb-6 leading-relaxed">
-              There are no archived folders or videos in the university database.
+              {qParam
+                ? `No archived folders or videos match “${qParam}”.`
+                : "There are no archived folders or videos in the university database."}
             </p>
-            <Link href="/" className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors shadow-sm">
-              Return to Catalog
-            </Link>
+            {!qParam && (
+              <Link href="/" className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors shadow-sm">
+                Return to Catalog
+              </Link>
+            )}
           </div>
 
+        ) : displayItems.length === 0 && deletedFolders.length === 0 && isListLoading ? (
+          <div className="text-center py-20 text-sm text-gray-500">Searching…</div>
         ) : (
-          <>
+          <div className={isListLoading ? "opacity-60 transition-opacity" : undefined}>
             {/* --- ARCHIVED FOLDERS SECTION --- */}
             {deletedFolders.length > 0 && (
               <div className="mb-12">
@@ -320,20 +376,30 @@ function ArchiveContent() {
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
 
         {/* --- PAGINATION (for videos only) --- */}
-        {!isLoading && totalPages > 1 && (
+        {hasLoadedOnce && !listError && totalPages > 1 && (
           <div className="flex justify-center items-center space-x-4 mt-12 mb-8">
             {currentPage > 1 ? (
-              <Link href={`/videos/archive?page=${currentPage - 1}`} className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg shadow-sm font-medium text-sm">Previous</Link>
+              <Link
+                href={buildArchiveHref({ page: currentPage - 1 }, { page: currentPage, q: qParam })}
+                className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg shadow-sm font-medium text-sm"
+              >
+                Previous
+              </Link>
             ) : (
               <button disabled className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed font-medium text-sm">Previous</button>
             )}
             <span className="text-sm text-gray-600 font-medium">Page {currentPage} of {totalPages}</span>
             {currentPage < totalPages ? (
-              <Link href={`/videos/archive?page=${currentPage + 1}`} className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg shadow-sm font-medium text-sm">Next</Link>
+              <Link
+                href={buildArchiveHref({ page: currentPage + 1 }, { page: currentPage, q: qParam })}
+                className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg shadow-sm font-medium text-sm"
+              >
+                Next
+              </Link>
             ) : (
               <button disabled className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed font-medium text-sm">Next</button>
             )}
