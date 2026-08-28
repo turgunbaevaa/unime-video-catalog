@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { getVideo, Video } from "@/src/lib/api";
 import { handleClientError } from "@/src/lib/notify";
 import ConferenceInfo from "@/src/components/ConferenceInfo";
 import { formatDisplayDate } from "@/src/lib/dates";
 import MarkdownContent from "@/src/components/MarkdownContent";
+import { buildFolderReturnHref } from "@/src/lib/folderNavigation";
 
 function MetadataField({
   label,
@@ -28,10 +29,28 @@ function MetadataField({
 }
 
 export default function VideoDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center font-sans">
+          <div className="text-gray-500">Loading video details...</div>
+        </div>
+      }
+    >
+      <VideoDetailContent />
+    </Suspense>
+  );
+}
+
+function VideoDetailContent() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const isAdmin = !!session;
+
+  const returnPage = Number(searchParams.get("returnPage")) || 1;
+  const returnQuery = searchParams.get("returnQuery") || "";
 
   const [video, setVideo] = useState<Video | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -104,6 +123,25 @@ export default function VideoDetailPage() {
   const dateRecordedLabel = formatDisplayDate(video.date_recorded);
   const canEdit = isAdmin && !video.is_deleted;
 
+  const handleBack = () => {
+    if (video.is_deleted) {
+      router.push("/videos/archive");
+      return;
+    }
+
+    if (video.folder_id) {
+      router.push(
+        buildFolderReturnHref(video.folder_id, {
+          page: returnPage,
+          q: returnQuery,
+        })
+      );
+      return;
+    }
+
+    router.push("/");
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-12">
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
@@ -128,15 +166,7 @@ export default function VideoDetailPage() {
             )}
             <button
               type="button"
-              onClick={() => {
-                if (video.is_deleted) {
-                  router.push("/videos/archive");
-                } else if (video.folder_id) {
-                  router.push(`/folders/${video.folder_id}`);
-                } else {
-                  router.push("/");
-                }
-              }}
+              onClick={handleBack}
               className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
             >
               &larr; {video.is_deleted ? "Back to Archive" : "Back"}

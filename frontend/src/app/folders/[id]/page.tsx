@@ -14,6 +14,8 @@ import {
 import { useSession } from "next-auth/react";
 import { useLiveSearchQuery } from "@/src/hooks/useLiveSearchQuery";
 import LiveSearchField from "@/src/components/LiveSearchField";
+import Pagination from "@/src/components/Pagination";
+import { buildFolderVideoHref } from "@/src/lib/folderNavigation";
 
 function FolderContent() {
   const params = useParams();
@@ -72,6 +74,11 @@ function FolderContent() {
       return qs ? `/folders/${folderId}?${qs}` : `/folders/${folderId}`;
     },
     [currentPage, sortParam, qParam, folderId]
+  );
+
+  const buildVideoDetailHref = useCallback(
+    (videoId: string) => buildFolderVideoHref(videoId, { page: currentPage, q: qParam }),
+    [currentPage, qParam]
   );
 
   const commitSearch = useCallback(
@@ -501,7 +508,7 @@ function FolderContent() {
                           <a href={activeVideo.azure_stream_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors">
                             Watch {partLabel(activeVideo, item.activePartIndex)}
                           </a>
-                          <Link href={`/videos/${activeVideo._id}`} className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline transition-colors">
+                          <Link href={buildVideoDetailHref(activeVideo._id)} className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline transition-colors">
                             Details &rarr;
                           </Link>
                         </div>
@@ -568,7 +575,7 @@ function FolderContent() {
                         <a href={video.azure_stream_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors">
                           Watch Video
                         </a>
-                        <Link href={`/videos/${video._id}`} className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline transition-colors">
+                        <Link href={buildVideoDetailHref(video._id)} className="text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline transition-colors">
                           View Details &rarr;
                         </Link>
                       </div>
@@ -605,28 +612,13 @@ function FolderContent() {
           </div>
         )}
 
-        {!listError && totalPages > 1 && (
-          <div className="flex justify-center items-center space-x-4 mt-12 mb-8">
-            {currentPage > 1 ? (
-              <Link href={buildFolderQuery({ page: currentPage - 1 })} className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm">
-                Previous
-              </Link>
-            ) : (
-              <button disabled className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed font-medium text-sm">
-                Previous
-              </button>
-            )}
-            <span className="text-sm text-gray-600 font-medium">Page {currentPage} of {totalPages}</span>
-            {currentPage < totalPages ? (
-              <Link href={buildFolderQuery({ page: currentPage + 1 })} className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium text-sm">
-                Next
-              </Link>
-            ) : (
-              <button disabled className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed font-medium text-sm">
-                Next
-              </button>
-            )}
-          </div>
+        {!listError && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            getPageHref={(page) => buildFolderQuery({ page })}
+            ariaLabel="Folder videos pagination"
+          />
         )}
       </main>
 
