@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, use } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   getVideo,
   updateVideo,
@@ -20,13 +20,29 @@ import MetadataForm, {
   type MetadataFormValues,
 } from "@/src/components/MetadataForm";
 import { FORM_INPUT_CLASS } from "@/src/lib/formStyles";
+import { buildFolderReturnHref } from "@/src/lib/folderNavigation";
+import { parsePage } from "@/src/lib/pagination";
 
 const inputClass = FORM_INPUT_CLASS;
 
 export default function EditVideoPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense
+      fallback={<div className="text-center py-20 text-gray-500">Loading video data...</div>}
+    >
+      <EditVideoContent params={params} />
+    </Suspense>
+  );
+}
+
+function EditVideoContent({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const videoId = resolvedParams.id;
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const returnPage = parsePage(searchParams.get("returnPage"));
+  const returnQuery = searchParams.get("returnQuery") || "";
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -155,15 +171,18 @@ export default function EditVideoPage({ params }: { params: Promise<{ id: string
       }
 
       const targetFolder = folderId || initialData.folder_id;
+      const folderHref = targetFolder
+        ? buildFolderReturnHref(targetFolder, { page: returnPage, q: returnQuery })
+        : "/";
 
       if (Object.keys(updatedFields).length === 0) {
-        router.push(targetFolder ? `/folders/${targetFolder}` : "/");
+        router.push(folderHref);
         return;
       }
 
       await updateVideo(videoId, updatedFields);
       showSuccess("Video updated.");
-      router.push(targetFolder ? `/folders/${targetFolder}` : "/");
+      router.push(folderHref);
     } catch (error) {
       handleClientError(error, "This video could not be updated.");
       setIsSaving(false);

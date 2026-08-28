@@ -15,7 +15,8 @@ import { useSession } from "next-auth/react";
 import { useLiveSearchQuery } from "@/src/hooks/useLiveSearchQuery";
 import LiveSearchField from "@/src/components/LiveSearchField";
 import Pagination from "@/src/components/Pagination";
-import { buildFolderVideoHref } from "@/src/lib/folderNavigation";
+import { buildFolderEditHref, buildFolderVideoHref } from "@/src/lib/folderNavigation";
+import { parsePage } from "@/src/lib/pagination";
 
 function FolderContent() {
   const params = useParams();
@@ -26,7 +27,7 @@ function FolderContent() {
   const { data: session } = useSession();
   const isAdmin = !!session;
 
-  const currentPage = Number(searchParams.get("page")) || 1;
+  const currentPage = parsePage(searchParams.get("page"));
   const sortParam = searchParams.get("sort") || "created_at_desc";
   const qParam = searchParams.get("q") || "";
   const limit = 12;
@@ -38,6 +39,7 @@ function FolderContent() {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isListLoading, setIsListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [folderLoadError, setFolderLoadError] = useState<string | null>(null);
 
   const [isEditFolderOpen, setIsEditFolderOpen] = useState(false);
   const [editName, setEditName] = useState("");
@@ -81,6 +83,11 @@ function FolderContent() {
     [currentPage, qParam]
   );
 
+  const buildVideoEditHref = useCallback(
+    (videoId: string) => buildFolderEditHref(videoId, { page: currentPage, q: qParam }),
+    [currentPage, qParam]
+  );
+
   const commitSearch = useCallback(
     (trimmed: string) => {
       router.replace(buildFolderQuery({ page: 1, q: trimmed }));
@@ -115,8 +122,11 @@ function FolderContent() {
     let cancelled = false;
 
     const load = async () => {
+      let loadedFolder: Folder | null = null;
+
       try {
         setListError(null);
+        setFolderLoadError(null);
         const knownFolder = folder && folder._id === folderId;
         if (!knownFolder) {
           setIsBootstrapping(true);
@@ -126,6 +136,7 @@ function FolderContent() {
 
         const folderData = await getFolderById(folderId);
         if (cancelled) return;
+        loadedFolder = folderData;
         setFolder(folderData);
 
         const isArchived = folderData.is_deleted ? true : undefined;
@@ -145,10 +156,13 @@ function FolderContent() {
         setTotalCount(videosData.total_count);
       } catch (error) {
         if (cancelled) return;
-        const knownFolder = folder && folder._id === folderId;
-        if (!knownFolder) {
-          handleClientError(error, "This folder could not be loaded.");
+        if (!loadedFolder) {
+          setFolder(null);
+          setFolderLoadError(
+            getErrorMessage(error, "This folder could not be loaded.")
+          );
         } else {
+          setFolder(loadedFolder);
           setListError(
             getErrorMessage(error, "Videos could not be loaded. Please try again.")
           );
@@ -287,18 +301,24 @@ function FolderContent() {
   };
 
 
-  if (isBootstrapping || !folder) {
+  if (isBootstrapping) {
     return <div className="min-h-screen bg-gray-50 text-center py-20 text-gray-500">Loading workspace...</div>;
   }
 
   if (!folder) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 text-center">
         <h2 className="text-2xl font-bold text-slate-900 mb-2">Folder not found</h2>
+        {folderLoadError && (
+          <p className="text-sm text-red-600 max-w-md mb-4">{folderLoadError}</p>
+        )}
         <Link href="/" className="text-blue-600 hover:underline">Return to Home</Link>
       </div>
     );
   }
+
+  const pageOutOfRange =
+    !isListLoading && !listError && totalCount > 0 && displayItems.length === 0 && !qParam;
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
@@ -422,14 +442,28 @@ function FolderContent() {
               </svg>
             </div>
             <h3 className="text-lg font-medium text-slate-900 mb-2">
-              {qParam ? "No matching videos" : "Folder is empty"}
+              {pageOutOfRange
+                ? "No videos on this page"
+                : qParam
+                  ? "No matching videos"
+                  : "Folder is empty"}
             </h3>
             <p className="text-sm text-gray-500 text-center max-w-sm mb-6 leading-relaxed">
-              {qParam
-                ? `No videos in this folder match “${qParam}”.`
-                : "There are no videos uploaded to this folder yet."}
+              {pageOutOfRange
+                ? `Page ${currentPage} is out of range. This folder has ${totalCount} ${totalCount === 1 ? "video" : "videos"}.`
+                : qParam
+                  ? `No videos in this folder match “${qParam}”.`
+                  : "There are no videos uploaded to this folder yet."}
             </p>
-            {isAdmin && !folder.is_deleted && !qParam && (
+            {pageOutOfRange && (
+              <Link
+                href={buildFolderQuery({ page: 1 })}
+                className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                Go to first page
+              </Link>
+            )}
+            {isAdmin && !folder.is_deleted && !qParam && !pageOutOfRange && (
               <Link
                 href={`/videos/new?folderId=${folderId}`}
                 className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
@@ -521,7 +555,7 @@ function FolderContent() {
                         <div className="flex gap-2 mt-3">
                           {!activeVideo.is_deleted ? (
                             <>
-                              <button type="button" onClick={() => router.push(`/videos/${activeVideo._id}/edit`)} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
+                              <button type="button" onClick={() => router.push(buildVideoEditHref(activeVideo._id))} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                                 Edit
                               </button>
                               <button type="button" onClick={() => confirmDelete([activeVideo._id], 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
@@ -588,7 +622,7 @@ function FolderContent() {
                       <div className="flex gap-2 mt-3">
                         {!video.is_deleted ? (
                           <>
-                            <button type="button" onClick={() => router.push(`/videos/${video._id}/edit`)} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
+                            <button type="button" onClick={() => router.push(buildVideoEditHref(video._id))} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
                               Edit
                             </button>
                             <button type="button" onClick={() => confirmDelete([video._id], 'soft')} className="flex-1 py-1.5 px-2 text-xs font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">

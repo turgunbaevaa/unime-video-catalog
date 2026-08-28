@@ -15,6 +15,18 @@ export function buildFolderVideoHref(videoId: string, context: FolderContext): s
   return qs ? `/videos/${videoId}?${qs}` : `/videos/${videoId}`;
 }
 
+/** Link to edit a video while preserving folder list context. */
+export function buildFolderEditHref(videoId: string, context: FolderContext): string {
+  const params = new URLSearchParams();
+  const page = context.page ?? 1;
+
+  if (page > 1) params.set("returnPage", String(page));
+  if (context.q?.trim()) params.set("returnQuery", context.q.trim());
+
+  const qs = params.toString();
+  return qs ? `/videos/${videoId}/edit?${qs}` : `/videos/${videoId}/edit`;
+}
+
 /** Back link from video details to the folder the user came from. */
 export function buildFolderReturnHref(folderId: string, context: FolderContext): string {
   const params = new URLSearchParams();

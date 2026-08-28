@@ -1,3 +1,10 @@
+/** Parse a page query param; invalid or out-of-range values fall back to 1. */
+export function parsePage(raw: string | null): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 1) return 1;
+  return Math.floor(value);
+}
+
 /** Build page number items with ellipsis for numbered pagination. */
 export function getPaginationRange(
   currentPage: number,

@@ -13,6 +13,7 @@ import {
 } from "@/src/lib/conferenceGrouping";
 import { useLiveSearchQuery } from "@/src/hooks/useLiveSearchQuery";
 import LiveSearchField from "@/src/components/LiveSearchField";
+import { parsePage } from "@/src/lib/pagination";
 
 function buildArchiveHref(
   overrides: { page?: number; q?: string },
@@ -31,7 +32,7 @@ function ArchiveContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const currentPage = Number(searchParams.get("page")) || 1;
+  const currentPage = parsePage(searchParams.get("page"));
   const qParam = searchParams.get("q") || "";
   const limit = 12;
 

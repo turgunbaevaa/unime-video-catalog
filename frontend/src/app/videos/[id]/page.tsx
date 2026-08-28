@@ -5,11 +5,13 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { getVideo, Video } from "@/src/lib/api";
-import { handleClientError } from "@/src/lib/notify";
+import { ApiError } from "@/src/lib/apiError";
+import { getErrorMessage, handleClientError } from "@/src/lib/notify";
 import ConferenceInfo from "@/src/components/ConferenceInfo";
 import { formatDisplayDate } from "@/src/lib/dates";
 import MarkdownContent from "@/src/components/MarkdownContent";
-import { buildFolderReturnHref } from "@/src/lib/folderNavigation";
+import { buildFolderEditHref, buildFolderReturnHref } from "@/src/lib/folderNavigation";
+import { parsePage } from "@/src/lib/pagination";
 
 function MetadataField({
   label,
@@ -49,21 +51,35 @@ function VideoDetailContent() {
   const { data: session } = useSession();
   const isAdmin = !!session;
 
-  const returnPage = Number(searchParams.get("returnPage")) || 1;
+  const returnPage = parsePage(searchParams.get("returnPage"));
   const returnQuery = searchParams.get("returnQuery") || "";
 
   const [video, setVideo] = useState<Video | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     const fetchVideo = async () => {
+      setLoadError(null);
+      setNotFound(false);
+      setVideo(null);
+      setIsLoading(true);
+
       try {
         if (params.id) {
           const data = await getVideo(params.id as string);
           setVideo(data);
         }
       } catch (error) {
-        handleClientError(error, "This video could not be loaded.");
+        if (error instanceof ApiError && error.status === 404) {
+          setNotFound(true);
+        } else {
+          setLoadError(
+            getErrorMessage(error, "This video could not be loaded.")
+          );
+          handleClientError(error, "This video could not be loaded.");
+        }
       } finally {
         setIsLoading(false);
       }
@@ -80,7 +96,19 @@ function VideoDetailContent() {
     );
   }
 
-  if (!video) {
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center font-sans px-4 text-center">
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">Could not load video</h2>
+        <p className="text-sm text-red-600 max-w-md mb-4">{loadError}</p>
+        <Link href="/" className="text-blue-600 hover:underline">
+          Return to Catalog
+        </Link>
+      </div>
+    );
+  }
+
+  if (!video || notFound) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center font-sans">
         <h2 className="text-xl font-semibold text-gray-900 mb-2">Video not found</h2>
@@ -158,7 +186,7 @@ function VideoDetailContent() {
           <div className="flex items-center gap-2 shrink-0">
             {canEdit && (
               <Link
-                href={`/videos/${video._id}/edit`}
+                href={buildFolderEditHref(video._id, { page: returnPage, q: returnQuery })}
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
               >
                 Edit Video

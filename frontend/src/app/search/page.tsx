@@ -5,12 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { searchCatalog, isAbortError, Video, Folder } from "@/src/lib/api";
 import { getErrorMessage } from "@/src/lib/notify";
-
-function parsePage(raw: string | null): number {
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 1) return 1;
-  return Math.floor(value);
-}
+import { parsePage } from "@/src/lib/pagination";
 
 function SearchSpinner() {
   return (

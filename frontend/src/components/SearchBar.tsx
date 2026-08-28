@@ -54,9 +54,8 @@ function SearchBarInner() {
       const href = `/search?q=${encodeURIComponent(trimmed)}`;
       const currentQ =
         pathname === "/search" ? (searchParams.get("q") || "").trim() : "";
-      const currentPage = searchParams.get("page");
 
-      if (pathname === "/search" && currentQ === trimmed && !currentPage) {
+      if (pathname === "/search" && currentQ === trimmed) {
         lastCommittedRef.current = trimmed;
         return;
       }
@@ -84,6 +83,11 @@ function SearchBarInner() {
       return;
     }
     const href = `/search?q=${encodeURIComponent(trimmed)}`;
+    const currentQ =
+      pathname === "/search" ? (searchParams.get("q") || "").trim() : "";
+    if (pathname === "/search" && currentQ === trimmed) {
+      return;
+    }
     lastCommittedRef.current = trimmed;
     if (pathname === "/search") {
       router.replace(href);

@@ -12,6 +12,7 @@ import {
 } from "@/src/lib/api";
 import { handleClientError, showSuccess } from "@/src/lib/notify";
 import { useSession } from "next-auth/react";
+import { parsePage } from "@/src/lib/pagination";
 
 function formatFolderDate(value?: string | null): string | null {
   if (!value) return null;
@@ -30,7 +31,7 @@ function HomeContent() {
   const { data: session } = useSession();
   const isAdmin = !!session;
 
-  const currentPage = Number(searchParams.get("page")) || 1;
+  const currentPage = parsePage(searchParams.get("page"));
   const limit = 15;
 
   const [folders, setFolders] = useState<Folder[]>([]);
