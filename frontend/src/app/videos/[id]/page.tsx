@@ -8,6 +8,7 @@ import { getVideo, Video } from "@/src/lib/api";
 import { handleClientError } from "@/src/lib/notify";
 import ConferenceInfo from "@/src/components/ConferenceInfo";
 import { formatDisplayDate } from "@/src/lib/dates";
+import MarkdownContent from "@/src/components/MarkdownContent";
 
 function MetadataField({
   label,
@@ -69,6 +70,22 @@ export default function VideoDetailPage() {
         </Link>
       </div>
     );
+  }
+
+  function formatTimecode(totalSeconds: number) {
+    if (!totalSeconds) return "00:00:00:000";
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+  const milliseconds = Math.floor((totalSeconds % 1) * 1000);
+
+  const h = hours.toString().padStart(2, '0');
+  const m = minutes.toString().padStart(2, '0');
+  const s = seconds.toString().padStart(2, '0');
+  const ms = milliseconds.toString().padStart(3, '0');
+
+  return `${h}:${m}:${s}:${ms}`;
   }
 
   const aiStatus = video.ai_processing?.status || "pending";
@@ -249,15 +266,36 @@ export default function VideoDetailPage() {
               <div className="flex flex-col gap-8">
                 <div>
                   <h4 className="text-sm font-semibold text-slate-800 mb-2">Summary</h4>
-                  <div className="text-sm text-gray-600 bg-gray-50 rounded-xl p-4 border border-gray-100 leading-relaxed">
-                    {video.ai_processing?.llm_summary || "No summary available."}
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                    {video.ai_processing?.llm_summary?.trim() ? (
+                      <MarkdownContent content={video.ai_processing.llm_summary} />
+                    ) : (
+                      <p className="text-sm text-gray-600">No summary available.</p>
+                    )}
                   </div>
                 </div>
 
                 <div>
                   <h4 className="text-sm font-semibold text-slate-800 mb-2">Transcript</h4>
-                  <div className="text-sm text-gray-600 bg-gray-50 rounded-xl p-4 border border-gray-100 h-64 overflow-y-auto leading-relaxed whitespace-pre-wrap">
-                    {video.ai_processing?.whisper_transcript || "No transcript available."}
+                  <div className="text-sm text-gray-600 bg-gray-50 rounded-xl p-4 border border-gray-100 h-64 overflow-y-auto leading-relaxed">
+                    {video.ai_processing?.transcript_segments && video.ai_processing.transcript_segments.length > 0 ? (
+                        <ul className="space-y-3">
+                          {video.ai_processing.transcript_segments.map((segment: any, index: number) => (
+                            <li key={index} className="flex gap-4 hover:bg-gray-100 p-1 rounded transition-colors">
+                              <span className="text-blue-600 font-mono text-xs mt-0.5 shrink-0 select-none">
+                                [{formatTimecode(segment.start_time)} - {formatTimecode(segment.end_time)}]
+                              </span>
+                              <span className="text-gray-800">
+                                {segment.text}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : video.ai_processing?.whisper_transcript ? (
+                        <p>{video.ai_processing.whisper_transcript}</p>
+                      ) : (
+                        "No transcript available."
+                      )}
                   </div>
                 </div>
               </div>
