@@ -15,7 +15,7 @@ import { useSession } from "next-auth/react";
 import { useLiveSearchQuery } from "@/src/hooks/useLiveSearchQuery";
 import LiveSearchField from "@/src/components/LiveSearchField";
 import Pagination from "@/src/components/Pagination";
-import { buildFolderEditHref, buildFolderVideoHref } from "@/src/lib/folderNavigation";
+import { buildFolderEditHref, buildFolderVideoHref, isValidCatalogReturn, resolveCatalogReturnHref } from "@/src/lib/folderNavigation";
 import { parsePage } from "@/src/lib/pagination";
 
 function FolderContent() {
@@ -30,6 +30,7 @@ function FolderContent() {
   const currentPage = parsePage(searchParams.get("page"));
   const sortParam = searchParams.get("sort") || "created_at_desc";
   const qParam = searchParams.get("q") || "";
+  const fromCatalog = searchParams.get("from");
   const limit = 12;
 
   const [folder, setFolder] = useState<Folder | null>(null);
@@ -72,11 +73,16 @@ function FolderContent() {
       if (page > 1) params.set("page", String(page));
       if (sort && sort !== "created_at_desc") params.set("sort", sort);
       if (q.trim()) params.set("q", q.trim());
+      if (fromCatalog && isValidCatalogReturn(fromCatalog)) {
+        params.set("from", fromCatalog);
+      }
       const qs = params.toString();
       return qs ? `/folders/${folderId}?${qs}` : `/folders/${folderId}`;
     },
-    [currentPage, sortParam, qParam, folderId]
+    [currentPage, sortParam, qParam, folderId, fromCatalog]
   );
+
+  const catalogBackHref = resolveCatalogReturnHref(fromCatalog);
 
   const buildVideoDetailHref = useCallback(
     (videoId: string) =>
@@ -334,7 +340,7 @@ function FolderContent() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
-              href={folder.is_deleted ? "/videos/archive" : "/"}
+              href={folder.is_deleted ? "/videos/archive" : catalogBackHref}
               className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
             >
               &larr; {folder.is_deleted ? "Back to Archive" : "Back to Catalog"}

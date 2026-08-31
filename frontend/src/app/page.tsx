@@ -13,6 +13,7 @@ import {
 import { handleClientError, showSuccess } from "@/src/lib/notify";
 import { useSession } from "next-auth/react";
 import { parsePage } from "@/src/lib/pagination";
+import { buildCatalogHref, buildFolderHrefFromCatalog } from "@/src/lib/folderNavigation";
 
 function formatFolderDate(value?: string | null): string | null {
   if (!value) return null;
@@ -33,6 +34,7 @@ function HomeContent() {
 
   const currentPage = parsePage(searchParams.get("page"));
   const limit = 15;
+  const catalogHref = buildCatalogHref(currentPage);
 
   const [folders, setFolders] = useState<Folder[]>([]);
   const [totalPages, setTotalPages] = useState(1);
@@ -219,7 +221,10 @@ function HomeContent() {
                   key={folder._id}
                   className="bg-white border border-gray-200 rounded-xl p-5 hover:border-slate-400 hover:shadow-md transition-all group relative flex flex-col"
                 >
-                  <Link href={`/folders/${folder._id}`} className="flex-1 min-w-0">
+                  <Link
+                    href={buildFolderHrefFromCatalog(folder._id, catalogHref)}
+                    className="flex-1 min-w-0"
+                  >
                     <div className="flex items-start gap-3 mb-3">
                       <svg
                         className="w-10 h-10 text-slate-200 group-hover:text-slate-700 transition-colors shrink-0"

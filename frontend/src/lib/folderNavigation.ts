@@ -4,6 +4,42 @@ export type FolderContext = {
   sort?: string;
 };
 
+/** Catalog home list URL for a given page. */
+export function buildCatalogHref(page = 1): string {
+  if (page > 1) return `/?page=${page}`;
+  return "/";
+}
+
+/** Validate a return URL for the catalog home page. */
+export function isValidCatalogReturn(href: string): boolean {
+  if (href === "/") return true;
+  if (!href.startsWith("/?") || href.startsWith("//")) return false;
+
+  const params = new URLSearchParams(href.slice(2));
+  for (const key of params.keys()) {
+    if (key !== "page") return false;
+  }
+
+  const page = params.get("page");
+  if (page === null) return false;
+  const value = Number(page);
+  return Number.isFinite(value) && value >= 1;
+}
+
+/** Open a folder from the catalog while preserving catalog list position. */
+export function buildFolderHrefFromCatalog(folderId: string, catalogHref: string): string {
+  const params = new URLSearchParams({ from: catalogHref });
+  return `/folders/${folderId}?${params.toString()}`;
+}
+
+/** Resolve the catalog URL to return to from a folder page. */
+export function resolveCatalogReturnHref(fromParam: string | null, fallbackPage = 1): string {
+  if (fromParam && isValidCatalogReturn(fromParam)) {
+    return fromParam;
+  }
+  return buildCatalogHref(fallbackPage);
+}
+
 /** Build the folder list URL from list context (page, search, sort). */
 export function buildFolderListHref(folderId: string, context: FolderContext): string {
   const params = new URLSearchParams();
