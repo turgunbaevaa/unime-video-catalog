@@ -79,13 +79,21 @@ function FolderContent() {
   );
 
   const buildVideoDetailHref = useCallback(
-    (videoId: string) => buildFolderVideoHref(videoId, { page: currentPage, q: qParam }),
-    [currentPage, qParam]
+    (videoId: string) =>
+      buildFolderVideoHref(
+        videoId,
+        buildFolderQuery({ page: currentPage, q: qParam, sort: sortParam })
+      ),
+    [buildFolderQuery, currentPage, qParam, sortParam]
   );
 
   const buildVideoEditHref = useCallback(
-    (videoId: string) => buildFolderEditHref(videoId, { page: currentPage, q: qParam }),
-    [currentPage, qParam]
+    (videoId: string) =>
+      buildFolderEditHref(
+        videoId,
+        buildFolderQuery({ page: currentPage, q: qParam, sort: sortParam })
+      ),
+    [buildFolderQuery, currentPage, qParam, sortParam]
   );
 
   const commitSearch = useCallback(

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { getVideo, Video } from "@/src/lib/api";
 import { ApiError } from "@/src/lib/apiError";
@@ -10,7 +10,7 @@ import { getErrorMessage, handleClientError } from "@/src/lib/notify";
 import ConferenceInfo from "@/src/components/ConferenceInfo";
 import { formatDisplayDate } from "@/src/lib/dates";
 import MarkdownContent from "@/src/components/MarkdownContent";
-import { buildFolderEditHref, buildFolderReturnHref } from "@/src/lib/folderNavigation";
+import { buildFolderEditHref, resolveFolderReturnHref } from "@/src/lib/folderNavigation";
 import { parsePage } from "@/src/lib/pagination";
 
 function MetadataField({
@@ -46,13 +46,14 @@ export default function VideoDetailPage() {
 
 function VideoDetailContent() {
   const params = useParams();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const isAdmin = !!session;
 
+  const fromFolder = searchParams.get("from");
   const returnPage = parsePage(searchParams.get("returnPage"));
   const returnQuery = searchParams.get("returnQuery") || "";
+  const returnSort = searchParams.get("returnSort") || "created_at_desc";
 
   const [video, setVideo] = useState<Video | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -151,24 +152,18 @@ function VideoDetailContent() {
   const dateRecordedLabel = formatDisplayDate(video.date_recorded);
   const canEdit = isAdmin && !video.is_deleted;
 
-  const handleBack = () => {
-    if (video.is_deleted) {
-      router.push("/videos/archive");
-      return;
-    }
-
-    if (video.folder_id) {
-      router.push(
-        buildFolderReturnHref(video.folder_id, {
-          page: returnPage,
-          q: returnQuery,
-        })
-      );
-      return;
-    }
-
-    router.push("/");
+  const folderReturnContext = {
+    page: returnPage,
+    q: returnQuery,
+    sort: returnSort,
   };
+
+  const folderBackHref =
+    video.folder_id && !video.is_deleted
+      ? resolveFolderReturnHref(video.folder_id, fromFolder, folderReturnContext)
+      : video.is_deleted
+        ? "/videos/archive"
+        : "/";
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-12">
@@ -186,19 +181,21 @@ function VideoDetailContent() {
           <div className="flex items-center gap-2 shrink-0">
             {canEdit && (
               <Link
-                href={buildFolderEditHref(video._id, { page: returnPage, q: returnQuery })}
+                href={buildFolderEditHref(
+                  video._id,
+                  resolveFolderReturnHref(video.folder_id, fromFolder, folderReturnContext)
+                )}
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
               >
                 Edit Video
               </Link>
             )}
-            <button
-              type="button"
-              onClick={handleBack}
-              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
+            <Link
+              href={folderBackHref}
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
             >
               &larr; {video.is_deleted ? "Back to Archive" : "Back"}
-            </button>
+            </Link>
           </div>
         </div>
       </header>

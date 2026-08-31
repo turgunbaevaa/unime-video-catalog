@@ -20,7 +20,7 @@ import MetadataForm, {
   type MetadataFormValues,
 } from "@/src/components/MetadataForm";
 import { FORM_INPUT_CLASS } from "@/src/lib/formStyles";
-import { buildFolderReturnHref } from "@/src/lib/folderNavigation";
+import { buildFolderEditHref, resolveFolderReturnHref } from "@/src/lib/folderNavigation";
 import { parsePage } from "@/src/lib/pagination";
 
 const inputClass = FORM_INPUT_CLASS;
@@ -41,8 +41,10 @@ function EditVideoContent({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const fromFolder = searchParams.get("from");
   const returnPage = parsePage(searchParams.get("returnPage"));
   const returnQuery = searchParams.get("returnQuery") || "";
+  const returnSort = searchParams.get("returnSort") || "created_at_desc";
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -172,7 +174,11 @@ function EditVideoContent({ params }: { params: Promise<{ id: string }> }) {
 
       const targetFolder = folderId || initialData.folder_id;
       const folderHref = targetFolder
-        ? buildFolderReturnHref(targetFolder, { page: returnPage, q: returnQuery })
+        ? resolveFolderReturnHref(targetFolder, fromFolder, {
+            page: returnPage,
+            q: returnQuery,
+            sort: returnSort,
+          })
         : "/";
 
       if (Object.keys(updatedFields).length === 0) {
